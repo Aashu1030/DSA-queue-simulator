@@ -3,5 +3,6 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="dsa.vcxproj" />
+  <Project Path="../simulator/simulator.vcxproj" Id="6cd2b936-9387-449b-8ac0-b19e85c9828a" />
+  <Project Path="dsa.vcxproj" Id="ef8277e0-fb28-48e8-8ced-31167f73f232" />
 </Solution>
