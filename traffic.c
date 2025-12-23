@@ -209,26 +209,40 @@ void displayText(SDL_Renderer* renderer, TTF_Font* font, char* text, int x, int 
 }
 
 void refreshLight(SDL_Renderer* renderer, SharedData* sharedData) {
-    if (sharedData->nextLight == sharedData->currentLight) return;
+    if (sharedData->currentState == sharedData->nextState)
+        return;
 
-    if (sharedData->nextLight == 0) drawLightForB(renderer, false);
-    if (sharedData->nextLight == 2) drawLightForB(renderer, true);
-    else drawLightForB(renderer, false);
+    SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
+    SDL_RenderClear(renderer);
+
+    drawRoadsAndLane(renderer, NULL);
+    drawAllLights(renderer, sharedData->nextState);
 
     SDL_RenderPresent(renderer);
-    sharedData->currentLight = sharedData->nextLight;
+
+    sharedData->currentState = sharedData->nextState;
 }
+
 
 DWORD WINAPI chequeQueue(LPVOID arg) {
     SharedData* sharedData = (SharedData*)arg;
+
     while (1) {
-        sharedData->nextLight = 0;
+        sharedData->nextState = AB_GREEN;
         Sleep(5000);
-        sharedData->nextLight = 2;
+
+        sharedData->nextState = ALL_RED;
+        Sleep(2000);
+
+        sharedData->nextState = CD_GREEN;
         Sleep(5000);
+
+        sharedData->nextState = ALL_RED;
+        Sleep(2000);
     }
     return 0;
 }
+
 
 DWORD WINAPI readAndParseFile(LPVOID arg) {
     while (1) {
