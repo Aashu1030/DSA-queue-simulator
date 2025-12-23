@@ -17,10 +17,17 @@
 
 const char* VEHICLE_FILE = "vehicles.data";
 
+typedef enum {
+    ALL_RED = 0,
+    AB_GREEN = 1,
+    CD_GREEN = 2
+} SignalState;
+
 typedef struct {
-    int currentLight;
-    int nextLight;
+    SignalState currentState;
+    SignalState nextState;
 } SharedData;
+
 
 // Function declarations
 bool initializeSDL(SDL_Window** window, SDL_Renderer** renderer);
@@ -38,7 +45,7 @@ int main() {
 
     if (!initializeSDL(&window, &renderer)) return -1;
 
-    SharedData sharedData = { 0, 0 }; // 0 => all red
+    SharedData sharedData = { ALL_RED, ALL_RED };    // 0 => all red
 
     TTF_Font* font = TTF_OpenFont(MAIN_FONT, 24);
     if (!font) SDL_Log("Failed to load font: %s", TTF_GetError());
@@ -133,18 +140,39 @@ void drawArrwow(SDL_Renderer* renderer, int x1, int y1, int x2, int y2, int x3, 
     }
 }
 
-void drawLightForB(SDL_Renderer* renderer, bool isRed) {
+void drawTrafficLight(SDL_Renderer* renderer, int x, int y, bool isGreen) {
     SDL_SetRenderDrawColor(renderer, 150, 150, 150, 255);
-    SDL_Rect lightBox = { 400, 300, 50, 30 };
-    SDL_RenderFillRect(renderer, &lightBox);
+    SDL_Rect box = { x, y, 40, 60 };
+    SDL_RenderFillRect(renderer, &box);
 
-    if (isRed) SDL_SetRenderDrawColor(renderer, 255, 0, 0, 255);
-    else SDL_SetRenderDrawColor(renderer, 11, 156, 50, 255);
+    // RED
+    SDL_SetRenderDrawColor(renderer, isGreen ? 100 : 255, 0, 0, 255);
+    SDL_Rect red = { x + 10, y + 5, 20, 15 };
+    SDL_RenderFillRect(renderer, &red);
 
-    SDL_Rect straight_Light = { 405, 305, 20, 20 };
-    SDL_RenderFillRect(renderer, &straight_Light);
-    drawArrwow(renderer, 435, 305, 435, 325, 445, 315);
+    // GREEN
+    SDL_SetRenderDrawColor(renderer, isGreen ? 0 : 100, isGreen ? 255 : 100, 0, 255);
+    SDL_Rect green = { x + 10, y + 35, 20, 15 };
+    SDL_RenderFillRect(renderer, &green);
 }
+
+void drawAllLights(SDL_Renderer* renderer, SignalState state) {
+    bool abGreen = (state == AB_GREEN);
+    bool cdGreen = (state == CD_GREEN);
+
+    // A (top)
+    drawTrafficLight(renderer, 380, 80, abGreen);
+
+    // B (bottom)
+    drawTrafficLight(renderer, 380, 660, abGreen);
+
+    // C (right)
+    drawTrafficLight(renderer, 660, 380, cdGreen);
+
+    // D (left)
+    drawTrafficLight(renderer, 80, 380, cdGreen);
+}
+
 
 void drawRoadsAndLane(SDL_Renderer* renderer, TTF_Font* font) {
     SDL_SetRenderDrawColor(renderer, 211, 211, 211, 255);
