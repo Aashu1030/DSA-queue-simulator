@@ -17,6 +17,7 @@
 
 const char* VEHICLE_FILE = "vehicles.data";
 
+
 typedef enum {
     ALL_RED = 0,
     AB_GREEN = 1,
@@ -28,6 +29,17 @@ typedef struct {
     SignalState nextState;
 } SharedData;
 
+typedef struct {
+    char number[10];
+    char lane;
+    int x, y;
+    int speed;
+} Vehicle;
+
+#define MAX_VEHICLES 100
+Vehicle vehicles[MAX_VEHICLES];
+int vehicleCount = 0;
+    
 
 // Function declarations
 bool initializeSDL(SDL_Window** window, SDL_Renderer** renderer);
@@ -37,6 +49,26 @@ void drawLightForB(SDL_Renderer* renderer, bool isRed);
 void refreshLight(SDL_Renderer* renderer, SharedData* sharedData);
 DWORD WINAPI chequeQueue(LPVOID arg);
 DWORD WINAPI readAndParseFile(LPVOID arg);
+
+void updateVehicles() {
+    for (int i = 0; i < vehicleCount; i++) {
+        switch (vehicles[i].lane) {
+        case 'A': vehicles[i].y += vehicles[i].speed; break; // down
+        case 'B': vehicles[i].y -= vehicles[i].speed; break; // up
+        case 'C': vehicles[i].x -= vehicles[i].speed; break; // left
+        case 'D': vehicles[i].x += vehicles[i].speed; break; // right
+        }
+    }
+}
+
+void drawVehicles(SDL_Renderer* renderer) {
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // blue cars
+
+    for (int i = 0; i < vehicleCount; i++) {
+        SDL_Rect car = { vehicles[i].x, vehicles[i].y, 30, 15 };
+        SDL_RenderFillRect(renderer, &car);
+    }
+}
 
 int main() {
     SDL_Window* window = NULL;
@@ -61,13 +93,17 @@ int main() {
 
     bool running = true;
     while (running) {
+
+        updateVehicles();                  // move vehicles
         refreshLight(renderer, &sharedData);
 
         while (SDL_PollEvent(&event))
             if (event.type == SDL_QUIT) running = false;
 
-        SDL_Delay(16); // ~60 FPS
+        SDL_Delay(16); // 60 FPS
     }
+    
+    
 
     CloseHandle(hQueue);
     CloseHandle(hRead);
@@ -209,15 +245,14 @@ void displayText(SDL_Renderer* renderer, TTF_Font* font, char* text, int x, int 
 }
 
 void refreshLight(SDL_Renderer* renderer, SharedData* sharedData) {
-    if (sharedData->currentState == sharedData->nextState)
-        return;
+    
 
     SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
     SDL_RenderClear(renderer);
 
     drawRoadsAndLane(renderer, NULL);
     drawAllLights(renderer, sharedData->nextState);
-
+    drawVehicles(renderer);
     SDL_RenderPresent(renderer);
 
     sharedData->currentState = sharedData->nextState;
@@ -245,21 +280,50 @@ DWORD WINAPI chequeQueue(LPVOID arg) {
 
 
 DWORD WINAPI readAndParseFile(LPVOID arg) {
-    while (1) {
-        FILE* file = fopen(VEHICLE_FILE, "r");
-        if (!file) { Sleep(2000); continue; }
+    static int alreadyLoaded = 0;
+    if (alreadyLoaded) return 0;   // prevent duplicate loading
+    alreadyLoaded = 1;
 
-        char line[MAX_LINE_LENGTH];
-        while (fgets(line, sizeof(line), file)) {
-            line[strcspn(line, "\n")] = 0;
-            char* vehicleNumber = strtok(line, ":");
-            char* road = strtok(NULL, ":");
+    FILE* file = fopen(VEHICLE_FILE, "r");
+    if (!file) return 0;
 
-            if (vehicleNumber && road) printf("Vehicle: %s, Road: %s\n", vehicleNumber, road);
-            else printf("Invalid format: %s\n", line);
+    char line[MAX_LINE_LENGTH];
+
+    while (fgets(line, sizeof(line), file)) {
+        line[strcspn(line, "\n")] = 0;
+
+        char* vehicleNumber = strtok(line, ":");
+        char* road = strtok(NULL, ":");
+
+        if (vehicleNumber && road && vehicleCount < MAX_VEHICLES) {
+            Vehicle v;
+            strcpy(v.number, vehicleNumber);
+            v.lane = road[0];
+            v.speed = 2;
+
+            switch (v.lane) {
+            case 'A':
+                v.x = WINDOW_WIDTH / 2 - 20;
+                v.y = 0 - vehicleCount * 25;
+                break;
+            case 'B':
+                v.x = WINDOW_WIDTH / 2 + 20;
+                v.y = WINDOW_HEIGHT + vehicleCount * 25;
+                break;
+            case 'C':
+                v.x = WINDOW_WIDTH + vehicleCount * 25;
+                v.y = WINDOW_HEIGHT / 2 + 20;
+                break;
+            case 'D':
+                v.x = 0 - vehicleCount * 25;
+                v.y = WINDOW_HEIGHT / 2 - 20;
+                break;
+            }
+
+            vehicles[vehicleCount++] = v;
         }
-        fclose(file);
-        Sleep(2000);
     }
+
+    fclose(file);
     return 0;
 }
