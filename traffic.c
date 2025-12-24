@@ -153,20 +153,15 @@ void drawRoad(SDL_Renderer* r) {
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
 
     for (int i = 1; i < 3; i++) {
-        SDL_RenderDrawLine(
-            WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH,
-            r,
-            0,
-            WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH,
-            WINDOW_HEIGHT
+        // vertical lane lines
+        SDL_RenderDrawLine(r,
+            WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH, 0,
+            WINDOW_WIDTH / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH, WINDOW_HEIGHT
         );
-
-        SDL_RenderDrawLine(
-            r,
-            0,
-            WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH,
-            WINDOW_WIDTH,
-            WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH
+        // horizontal lane lines
+        SDL_RenderDrawLine(r,
+            0, WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH,
+            WINDOW_WIDTH, WINDOW_HEIGHT / 2 - ROAD_WIDTH / 2 + i * LANE_WIDTH
         );
     }
 }
@@ -181,7 +176,7 @@ void drawTrafficLight(SDL_Renderer* r, int x, int y, int green) {
     box.h = 50;
     SDL_RenderFillRect(r, &box);
 
-    SDL_SetRenderDrawColor(r, green ? 100 : 255, 0, 0, 255);
+    SDL_SetRenderDrawColor(r, green ? 0 : 255, 0, 0, 255);
     SDL_Rect red;
     red.x = x + 8;
     red.y = y + 5;
@@ -189,7 +184,7 @@ void drawTrafficLight(SDL_Renderer* r, int x, int y, int green) {
     red.h = 14;
     SDL_RenderFillRect(r, &red);
 
-    SDL_SetRenderDrawColor(r, green ? 0 : 100, green ? 255 : 100, 0, 255);
+    SDL_SetRenderDrawColor(r, green ? 0 : 100, green ? 255 : 0, 0, 255);
     SDL_Rect greenRect;
     greenRect.x = x + 8;
     greenRect.y = y + 30;
@@ -239,7 +234,6 @@ DWORD WINAPI readFileThread(LPVOID arg) {
     while (fgets(line, sizeof(line), f)) {
         Vehicle v;
         memset(&v, 0, sizeof(Vehicle));
-
         sscanf(line, "%19[^:]:%c", v.number, &v.road);
         v.speed = 2;
 
@@ -260,8 +254,8 @@ DWORD WINAPI readFileThread(LPVOID arg) {
 }
 
 int main() {
-    SDL_Window* window = NULL;
-    SDL_Renderer* renderer = NULL;
+    SDL_Window* window;
+    SDL_Renderer* renderer;
 
     if (!initializeSDL(&window, &renderer)) return -1;
 
