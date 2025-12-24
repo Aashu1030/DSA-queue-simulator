@@ -1,4 +1,4 @@
-#define _CRT_SECURE_NO_WARNINGS
+﻿#define _CRT_SECURE_NO_WARNINGS
 #include <SDL.h>
 #include <SDL_ttf.h>
 #include <windows.h>   // For Sleep()
@@ -14,6 +14,12 @@
 #define ROAD_WIDTH 150
 #define LANE_WIDTH 50
 #define ARROW_SIZE 15
+
+int laneX_A[3] = { 360, 400, 440 };
+int laneX_B[3] = { 360, 400, 440 };
+int laneY_C[3] = { 360, 400, 440 };
+int laneY_D[3] = { 360, 400, 440 };
+
 
 const char* VEHICLE_FILE = "vehicles.data";
 
@@ -31,10 +37,12 @@ typedef struct {
 
 typedef struct {
     char number[10];
-    char lane;
+    char road;        // A B C D
+    int laneIndex;    // 0,1,2 (3 lanes)
     int x, y;
     int speed;
 } Vehicle;
+
 
 #define MAX_VEHICLES 100
 Vehicle vehicles[MAX_VEHICLES];
@@ -49,26 +57,43 @@ void drawLightForB(SDL_Renderer* renderer, bool isRed);
 void refreshLight(SDL_Renderer* renderer, SharedData* sharedData);
 DWORD WINAPI chequeQueue(LPVOID arg);
 DWORD WINAPI readAndParseFile(LPVOID arg);
+bool canMove(Vehicle* v, SignalState state) {
+    if ((v->road == 'A' || v->road == 'B') && state == AB_GREEN)
+        return true;
 
-void updateVehicles() {
+    if ((v->road == 'C' || v->road == 'D') && state == CD_GREEN)
+        return true;
+
+    return false;
+}
+
+void updateVehicles(SignalState state) {
     for (int i = 0; i < vehicleCount; i++) {
-        switch (vehicles[i].lane) {
-        case 'A': vehicles[i].y += vehicles[i].speed; break; // down
-        case 'B': vehicles[i].y -= vehicles[i].speed; break; // up
-        case 'C': vehicles[i].x -= vehicles[i].speed; break; // left
-        case 'D': vehicles[i].x += vehicles[i].speed; break; // right
+
+        if (!canMove(&vehicles[i], state))
+            continue;   // STOP at red light
+
+        switch (vehicles[i].road) {
+        case 'A': vehicles[i].y += vehicles[i].speed; break;
+        case 'B': vehicles[i].y -= vehicles[i].speed; break;
+        case 'C': vehicles[i].x -= vehicles[i].speed; break;
+        case 'D': vehicles[i].x += vehicles[i].speed; break;
         }
     }
 }
-
 void drawVehicles(SDL_Renderer* renderer) {
-    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255); // blue cars
+    SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
 
     for (int i = 0; i < vehicleCount; i++) {
-        SDL_Rect car = { vehicles[i].x, vehicles[i].y, 30, 15 };
+        SDL_Rect car = { vehicles[i].x, vehicles[i].y, 20, 30 };
         SDL_RenderFillRect(renderer, &car);
     }
 }
+
+
+
+
+
 
 int main() {
     SDL_Window* window = NULL;
@@ -94,8 +119,9 @@ int main() {
     bool running = true;
     while (running) {
 
-        updateVehicles();                  // move vehicles
+        updateVehicles(sharedData.currentState);
         refreshLight(renderer, &sharedData);
+
 
         while (SDL_PollEvent(&event))
             if (event.type == SDL_QUIT) running = false;
@@ -298,29 +324,34 @@ DWORD WINAPI readAndParseFile(LPVOID arg) {
         if (vehicleNumber && road && vehicleCount < MAX_VEHICLES) {
             Vehicle v;
             strcpy(v.number, vehicleNumber);
-            v.lane = road[0];
+            v.road = road[0];
             v.speed = 2;
+            v.laneIndex = vehicleCount % 3;   // 3 lanes
 
-            switch (v.lane) {
-            case 'A':
-                v.x = WINDOW_WIDTH / 2 - 20;
-                v.y = 0 - vehicleCount * 25;
+            switch (v.road) {
+            case 'A':   // top → down
+                v.x = laneX_A[v.laneIndex];
+                v.y = -vehicleCount * 30;
                 break;
-            case 'B':
-                v.x = WINDOW_WIDTH / 2 + 20;
-                v.y = WINDOW_HEIGHT + vehicleCount * 25;
+
+            case 'B':   // bottom → up
+                v.x = laneX_B[v.laneIndex];
+                v.y = WINDOW_HEIGHT + vehicleCount * 30;
                 break;
-            case 'C':
-                v.x = WINDOW_WIDTH + vehicleCount * 25;
-                v.y = WINDOW_HEIGHT / 2 + 20;
+
+            case 'C':   // right → left
+                v.x = WINDOW_WIDTH + vehicleCount * 30;
+                v.y = laneY_C[v.laneIndex];
                 break;
-            case 'D':
-                v.x = 0 - vehicleCount * 25;
-                v.y = WINDOW_HEIGHT / 2 - 20;
+
+            case 'D':   // left → right
+                v.x = -vehicleCount * 30;
+                v.y = laneY_D[v.laneIndex];
                 break;
             }
 
             vehicles[vehicleCount++] = v;
+
         }
     }
 
