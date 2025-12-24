@@ -15,6 +15,25 @@
 #define LANE_WIDTH 50
 #define ARROW_SIZE 15
 
+// Lane offsets
+#define LANE_WIDTH 30
+
+// Incoming lanes center positions
+#define A_L1_X (WINDOW_WIDTH / 2 - LANE_WIDTH)
+#define B_L1_X (WINDOW_WIDTH / 2 + LANE_WIDTH)
+#define C_L1_Y (WINDOW_HEIGHT / 2 - LANE_WIDTH)
+#define D_L1_Y (WINDOW_HEIGHT / 2 + LANE_WIDTH)
+
+// Function to check if vehicle can move based on light and lane
+bool canMove(Vehicle* v, SignalState state);
+
+// Function to check if lane 2 is priority
+bool isPriorityLane(Vehicle* v);
+
+// Function to calculate green light time dynamically
+int greenTime(SignalState state);
+
+
 int laneX_A[3] = { 360, 400, 440 };
 int laneX_B[3] = { 360, 400, 440 };
 int laneY_C[3] = { 360, 400, 440 };
@@ -36,19 +55,53 @@ typedef struct {
 } SharedData;
 
 typedef struct {
-    char number[10];
-    char road;        // A B C D
-    int laneIndex;    // 0,1,2 (3 lanes)
-    int x, y;
+    char number[20];
+    char road;      // A B C D
+    int lane;       // 1, 2, 3
+    float x, y;
     int speed;
+    int active;
 } Vehicle;
+#define MAX_QUEUE 50
+void initQueue(Queue* q) {
+    q->front = q->rear = -1;
+}
+
+int isEmpty(Queue* q) {
+    return q->front == -1;
+}
+
+int isFull(Queue* q) {
+    return q->rear == MAX_QUEUE - 1;
+}
+
+void enqueue(Queue* q, Vehicle v) {
+    if (isFull(q)) return;
+    if (isEmpty(q)) q->front = 0;
+    q->rear++;
+    q->data[q->rear] = v;
+}
+
+Vehicle dequeue(Queue* q) {
+    Vehicle v = q->data[q->front];
+    if (q->front == q->rear)
+        q->front = q->rear = -1;
+    else
+        q->front++;
+    return v;
+}
 
 
-#define MAX_VEHICLES 100
-Vehicle vehicles[MAX_VEHICLES];
-int vehicleCount = 0;
+
+
+typedef struct {
+    Vehicle data[MAX_QUEUE];
+    int front;
+    int rear;
+} Queue;
+
+Queue roadQueue[4];   // 0=A, 1=B, 2=C, 3=D
     
-
 // Function declarations
 bool initializeSDL(SDL_Window** window, SDL_Renderer** renderer);
 void drawRoadsAndLane(SDL_Renderer* renderer, TTF_Font* font);
@@ -67,28 +120,81 @@ bool canMove(Vehicle* v, SignalState state) {
     return false;
 }
 
-void updateVehicles(SignalState state) {
-    for (int i = 0; i < vehicleCount; i++) {
-
-        if (!canMove(&vehicles[i], state))
-            continue;   // STOP at red light
-
-        switch (vehicles[i].road) {
-        case 'A': vehicles[i].y += vehicles[i].speed; break;
-        case 'B': vehicles[i].y -= vehicles[i].speed; break;
-        case 'C': vehicles[i].x -= vehicles[i].speed; break;
-        case 'D': vehicles[i].x += vehicles[i].speed; break;
-        }
+void moveVehicle(Vehicle* v) {
+    switch (v->road) {
+    case 'A': v->y += v->speed; break;
+    case 'B': v->y -= v->speed; break;
+    case 'C': v->x -= v->speed; break;
+    case 'D': v->x += v->speed; break;
     }
 }
+
+void updateVehicles(SignalState state) {
+    if (state == AB_GREEN) {
+        if (!isEmpty(&roadQueue[0]))
+            moveVehicle(&roadQueue[0].data[roadQueue[0].front]);
+        if (!isEmpty(&roadQueue[1]))
+            moveVehicle(&roadQueue[1].data[roadQueue[1].front]);
+    }
+
+    if (state == CD_GREEN) {
+        if (!isEmpty(&roadQueue[2]))
+            moveVehicle(&roadQueue[2].data[roadQueue[2].front]);
+        if (!isEmpty(&roadQueue[3]))
+            moveVehicle(&roadQueue[3].data[roadQueue[3].front]);
+    }
+}
+
+
+bool canMove(Vehicle* v, SignalState state) {
+    if ((v->road == 'A' || v->road == 'B') && state == AB_GREEN)
+        return true;
+    if ((v->road == 'C' || v->road == 'D') && state == CD_GREEN)
+        return true;
+    return false;
+}
+
+bool isPriorityLane(Vehicle* v) {
+    if (v->lane == 2) {
+        int count = 0;
+        for (int i = 0; i < vehicleCount; i++)
+            if (vehicles[i].road == v->road && vehicles[i].lane == 2)
+                count++;
+        return count > 5;
+    }
+    return false;
+}
+
+int greenTime(SignalState state) {
+    int totalVehicles = 0, n = 0;
+    for (int i = 0; i < vehicleCount; i++) {
+        if (canMove(&vehicles[i], state)) {
+            totalVehicles++;
+            n++;
+        }
+    }
+    int t = 500; // time per vehicle in ms
+    return (n > 0) ? (totalVehicles / n) * t : 3000; // default 3 sec if no vehicle
+}
+
+
 void drawVehicles(SDL_Renderer* renderer) {
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
 
-    for (int i = 0; i < vehicleCount; i++) {
-        SDL_Rect car = { vehicles[i].x, vehicles[i].y, 20, 30 };
-        SDL_RenderFillRect(renderer, &car);
+    for (int r = 0; r < 4; r++) {
+        if (!isEmpty(&roadQueue[r])) {
+            for (int i = roadQueue[r].front; i <= roadQueue[r].rear; i++) {
+                SDL_Rect car = {
+                    roadQueue[r].data[i].x,
+                    roadQueue[r].data[i].y,
+                    20, 30
+                };
+                SDL_RenderFillRect(renderer, &car);
+            }
+        }
     }
 }
+
 
 
 
@@ -99,6 +205,9 @@ int main() {
     SDL_Window* window = NULL;
     SDL_Renderer* renderer = NULL;
     SDL_Event event;
+    for (int i = 0; i < 4; i++)
+        initQueue(&roadQueue[i]);
+
 
     if (!initializeSDL(&window, &renderer)) return -1;
 
@@ -290,16 +399,25 @@ DWORD WINAPI chequeQueue(LPVOID arg) {
 
     while (1) {
         sharedData->nextState = AB_GREEN;
-        Sleep(5000);
+        Sleep(greenTime(AB_GREEN));
 
         sharedData->nextState = ALL_RED;
         Sleep(2000);
 
         sharedData->nextState = CD_GREEN;
-        Sleep(5000);
+        Sleep(greenTime(CD_GREEN));
 
         sharedData->nextState = ALL_RED;
         Sleep(2000);
+
+        // Serve priority lanes (lane 2 with >5 vehicles)
+        for (int i = 0; i < vehicleCount; i++) {
+            if (isPriorityLane(&vehicles[i])) {
+                sharedData->nextState = (vehicles[i].road == 'A' || vehicles[i].road == 'B') ? AB_GREEN : CD_GREEN;
+                Sleep(2000); // short green for priority vehicle
+                sharedData->nextState = ALL_RED;
+            }
+        }
     }
     return 0;
 }
@@ -316,43 +434,53 @@ DWORD WINAPI readAndParseFile(LPVOID arg) {
     char line[MAX_LINE_LENGTH];
 
     while (fgets(line, sizeof(line), file)) {
+
         line[strcspn(line, "\n")] = 0;
 
         char* vehicleNumber = strtok(line, ":");
         char* road = strtok(NULL, ":");
 
-        if (vehicleNumber && road && vehicleCount < MAX_VEHICLES) {
-            Vehicle v;
-            strcpy(v.number, vehicleNumber);
-            v.road = road[0];
-            v.speed = 2;
-            v.laneIndex = vehicleCount % 3;   // 3 lanes
+        if (!vehicleNumber || !road || vehicleCount >= MAX_VEHICLES)
+            continue;
 
-            switch (v.road) {
-            case 'A':   // top → down
-                v.x = laneX_A[v.laneIndex];
-                v.y = -vehicleCount * 30;
-                break;
+        Vehicle v;
+        strcpy(v.number, vehicleNumber);
+        v.road = road[0];
+        v.lane = 1;          // Phase 1: incoming lane only
+        v.speed = 2;
+        v.active = 1;
 
-            case 'B':   // bottom → up
-                v.x = laneX_B[v.laneIndex];
-                v.y = WINDOW_HEIGHT + vehicleCount * 30;
-                break;
+        switch (v.road) {
 
-            case 'C':   // right → left
-                v.x = WINDOW_WIDTH + vehicleCount * 30;
-                v.y = laneY_C[v.laneIndex];
-                break;
+        case 'A':   // Top → Down
+            v.x = A_L1_X;
+            v.y = -vehicleCount * 40;
+            break;
 
-            case 'D':   // left → right
-                v.x = -vehicleCount * 30;
-                v.y = laneY_D[v.laneIndex];
-                break;
-            }
+        case 'B':   // Bottom → Up
+            v.x = B_L1_X;
+            v.y = WINDOW_HEIGHT + vehicleCount * 40;
+            break;
 
-            vehicles[vehicleCount++] = v;
+        case 'C':   // Right → Left
+            v.x = WINDOW_WIDTH + vehicleCount * 40;
+            v.y = C_L1_Y;
+            break;
 
+        case 'D':   // Left → Right
+            v.x = -vehicleCount * 40;
+            v.y = D_L1_Y;
+            break;
+
+        default:
+            continue;
         }
+
+        int index = v.road - 'A';   // A=0, B=1, C=2, D=3
+        enqueue(&roadQueue[index], v);
+
+    }
+
     }
 
     fclose(file);
