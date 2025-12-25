@@ -5,11 +5,13 @@
 #include <SDL.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
 
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
 #define ROAD_WIDTH 150
-#define MAX_QUEUE 50
+#define MAX_QUEUE 100
 
 #define CAR_W_V 20
 #define CAR_H_V 30
@@ -17,6 +19,7 @@
 #define CAR_H_H 20
 
 #define STOP_OFFSET 10
+#define SPAWN_GAP 60
 
 #define JUNCTION_LEFT   (WINDOW_WIDTH/2 - ROAD_WIDTH/2)
 #define JUNCTION_RIGHT  (WINDOW_WIDTH/2 + ROAD_WIDTH/2)
@@ -39,8 +42,8 @@ SharedData shared;
 
 // vehicle
 typedef struct {
-    char road;      // A B C D
-    int lane;       // 1 = right, 2 = priority, 3 = left
+    char road;     // A B C D
+    int lane;      // 1 = right, 2 = priority, 3 = left
     float x, y;
     int speed;
     int crossed;
@@ -73,46 +76,34 @@ void enqueue(Queue* q, Vehicle v) {
 // SDL init
 void initSDL(SDL_Window** w, SDL_Renderer** r) {
     SDL_Init(SDL_INIT_VIDEO);
-    *w = SDL_CreateWindow(
-        "Traffic Junction",
-        SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
-        0
-    );
+    *w = SDL_CreateWindow("Traffic Junction",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH, WINDOW_HEIGHT, 0);
     *r = SDL_CreateRenderer(*w, -1, SDL_RENDERER_ACCELERATED);
 }
 
-// keep vehicle centered in its lane
+// lock vehicle to its lane center
 void lockToLane(Vehicle* v) {
 
     int laneSize = ROAD_WIDTH / 3;
 
-    // vertical roads
     if (v->road == 'A' || v->road == 'B') {
-        v->x = JUNCTION_LEFT
-            + (v->lane - 1) * laneSize
-            + (laneSize - CAR_W_V) / 2;
+        v->x = JUNCTION_LEFT +
+            (v->lane - 1) * laneSize +
+            (laneSize - CAR_W_V) / 2;
     }
 
-    // horizontal roads
     if (v->road == 'C' || v->road == 'D') {
-        v->y = JUNCTION_TOP
-            + (v->lane - 1) * laneSize
-            + (laneSize - CAR_H_H) / 2;
+        v->y = JUNCTION_TOP +
+            (v->lane - 1) * laneSize +
+            (laneSize - CAR_H_H) / 2;
     }
 }
 
-// check if vehicle must obey signal
+// check signal obedience
 int obeySignal(Vehicle* v) {
-
-    // priority lane never stops
-    if (v->lane == 2) return 0;
-
-    // turning lanes never stop
-    if (v->lane == 1 || v->lane == 3) return 0;
-
+    if (v->lane == 2) return 0; // priority
+    if (v->lane == 1 || v->lane == 3) return 0; // turning lanes
     return 1;
 }
 
@@ -121,7 +112,6 @@ void moveVehicle(Vehicle* v) {
 
     lockToLane(v);
 
-    // signal check
     if (!v->crossed && obeySignal(v)) {
 
         if (v->road == 'A' && shared.nextState != AB_GREEN &&
@@ -137,13 +127,11 @@ void moveVehicle(Vehicle* v) {
             v->x <= JUNCTION_RIGHT + STOP_OFFSET) return;
     }
 
-    // forward movement
     if (v->road == 'A') v->y += v->speed;
     if (v->road == 'B') v->y -= v->speed;
     if (v->road == 'C') v->x -= v->speed;
     if (v->road == 'D') v->x += v->speed;
 
-    // crossed junction
     if (!v->crossed) {
         if ((v->road == 'A' && v->y >= JUNCTION_BOTTOM) ||
             (v->road == 'B' && v->y + CAR_H_V <= JUNCTION_TOP) ||
@@ -152,7 +140,7 @@ void moveVehicle(Vehicle* v) {
             v->crossed = 1;
     }
 
-    // LEFT TURN lane
+    // left turn lane
     if (v->crossed == 1 && v->lane == 3) {
         if (v->road == 'A') v->road = 'D';
         else if (v->road == 'D') v->road = 'B';
@@ -161,7 +149,7 @@ void moveVehicle(Vehicle* v) {
         lockToLane(v);
     }
 
-    // RIGHT TURN lane
+    // right turn lane
     if (v->crossed == 1 && v->lane == 1) {
         if (v->road == 'A') v->road = 'C';
         else if (v->road == 'C') v->road = 'B';
@@ -170,20 +158,20 @@ void moveVehicle(Vehicle* v) {
         lockToLane(v);
     }
 
-    // remove when out
-    if (v->x < -60 || v->x > WINDOW_WIDTH + 60 ||
-        v->y < -60 || v->y > WINDOW_HEIGHT + 60)
+    if (v->x < -80 || v->x > WINDOW_WIDTH + 80 ||
+        v->y < -80 || v->y > WINDOW_HEIGHT + 80)
         v->crossed = 2;
 }
 
-// update
+// update all vehicles
 void updateVehicles() {
     for (int i = 0; i < 4; i++)
-        if (!isEmpty(&roadQueue[i]))
-            moveVehicle(&roadQueue[i].data[roadQueue[i].front]);
+        for (int j = roadQueue[i].front; j <= roadQueue[i].rear; j++)
+            if (roadQueue[i].data[j].crossed != 2)
+                moveVehicle(&roadQueue[i].data[j]);
 }
 
-// draw road and lanes
+// draw road
 void drawRoad(SDL_Renderer* r) {
 
     SDL_SetRenderDrawColor(r, 200, 200, 200, 255);
@@ -197,13 +185,10 @@ void drawRoad(SDL_Renderer* r) {
     SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
 
     int lane = ROAD_WIDTH / 3;
-
     for (int i = 1; i < 3; i++) {
-        SDL_RenderDrawLine(r,
-            JUNCTION_LEFT + i * lane, 0,
+        SDL_RenderDrawLine(r, JUNCTION_LEFT + i * lane, 0,
             JUNCTION_LEFT + i * lane, WINDOW_HEIGHT);
-        SDL_RenderDrawLine(r,
-            0, JUNCTION_TOP + i * lane,
+        SDL_RenderDrawLine(r, 0, JUNCTION_TOP + i * lane,
             WINDOW_WIDTH, JUNCTION_TOP + i * lane);
     }
 }
@@ -214,14 +199,13 @@ void drawVehicles(SDL_Renderer* r) {
     SDL_SetRenderDrawColor(r, 0, 0, 255, 255);
 
     for (int i = 0; i < 4; i++) {
-        if (!isEmpty(&roadQueue[i])) {
+        for (int j = roadQueue[i].front; j <= roadQueue[i].rear; j++) {
 
-            Vehicle* v = &roadQueue[i].data[roadQueue[i].front];
+            Vehicle* v = &roadQueue[i].data[j];
             if (v->crossed == 2) continue;
 
             SDL_Rect car = {
-                (int)v->x,
-                (int)v->y,
+                (int)v->x, (int)v->y,
                 (v->road == 'A' || v->road == 'B') ? CAR_W_V : CAR_W_H,
                 (v->road == 'A' || v->road == 'B') ? CAR_H_V : CAR_H_H
             };
@@ -230,7 +214,7 @@ void drawVehicles(SDL_Renderer* r) {
     }
 }
 
-// lights
+// traffic lights
 void drawLight(SDL_Renderer* r, int x, int y, int green) {
 
     SDL_SetRenderDrawColor(r, 120, 120, 120, 255);
@@ -271,6 +255,37 @@ DWORD WINAPI signalThread(LPVOID arg) {
     }
 }
 
+// vehicle generator thread
+DWORD WINAPI generatorThread(LPVOID arg) {
+
+    srand((unsigned int)time(NULL));
+
+    while (1) {
+
+        for (int road = 0; road < 4; road++) {
+            for (int lane = 1; lane <= 3; lane++) {
+
+                Vehicle v = { 0 };
+                v.road = 'A' + road;
+                v.lane = lane;
+                v.speed = 2;
+                v.crossed = 0;
+
+                int offset = (roadQueue[road].rear + 1) * SPAWN_GAP;
+
+                if (v.road == 'A') v.y = -offset;
+                if (v.road == 'B') v.y = WINDOW_HEIGHT + offset;
+                if (v.road == 'C') v.x = WINDOW_WIDTH + offset;
+                if (v.road == 'D') v.x = -offset;
+
+                enqueue(&roadQueue[road], v);
+            }
+        }
+
+        Sleep(1000); // new batch every second
+    }
+}
+
 // main
 int main() {
 
@@ -282,16 +297,8 @@ int main() {
     for (int i = 0; i < 4; i++)
         initQueue(&roadQueue[i]);
 
-    // test vehicles
-    Vehicle leftTurn = { 'A', 3, 0, -40, 2, 0 };
-    Vehicle priority = { 'A', 2, 0, -80, 2, 0 };
-    Vehicle rightTurn = { 'A', 1, 0, -120,2, 0 };
-
-    enqueue(&roadQueue[0], leftTurn);
-    enqueue(&roadQueue[0], priority);
-    enqueue(&roadQueue[0], rightTurn);
-
     CreateThread(NULL, 0, signalThread, NULL, 0, NULL);
+    CreateThread(NULL, 0, generatorThread, NULL, 0, NULL);
 
     SDL_Event e;
     int running = 1;
@@ -319,3 +326,4 @@ int main() {
     SDL_Quit();
     return 0;
 }
+
