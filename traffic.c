@@ -259,7 +259,7 @@ DWORD WINAPI generatorThread(LPVOID arg) {
     }
 }
 
-// main
+
 int main() {
 
     SDL_Window* window;
