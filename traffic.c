@@ -63,10 +63,6 @@ void initQueue(Queue* q) {
     q->front = q->rear = -1;
 }
 
-int isEmpty(Queue* q) {
-    return q->front == -1;
-}
-
 void enqueue(Queue* q, Vehicle v) {
     if (q->rear == MAX_QUEUE - 1) return;
     if (q->front == -1) q->front = 0;
@@ -82,7 +78,7 @@ void initSDL(SDL_Window** w, SDL_Renderer** r) {
     *r = SDL_CreateRenderer(*w, -1, SDL_RENDERER_ACCELERATED);
 }
 
-// lock vehicle to its lane center
+// lock vehicle to lane center
 void lockToLane(Vehicle* v) {
 
     int laneSize = ROAD_WIDTH / 3;
@@ -100,10 +96,9 @@ void lockToLane(Vehicle* v) {
     }
 }
 
-// check signal obedience
+// priority obey
 int obeySignal(Vehicle* v) {
-    if (v->lane == 2) return 0; // priority
-    if (v->lane == 1 || v->lane == 3) return 0; // turning lanes
+    if (v->lane == 2) return 0;
     return 1;
 }
 
@@ -140,21 +135,25 @@ void moveVehicle(Vehicle* v) {
             v->crossed = 1;
     }
 
-    // left turn lane
+    // LEFT TURN -> nearest LEFT lane
     if (v->crossed == 1 && v->lane == 3) {
         if (v->road == 'A') v->road = 'D';
         else if (v->road == 'D') v->road = 'B';
         else if (v->road == 'B') v->road = 'C';
         else if (v->road == 'C') v->road = 'A';
+
+        v->lane = 3;          // nearest left lane
         lockToLane(v);
     }
 
-    // right turn lane
+    // RIGHT TURN -> nearest RIGHT lane
     if (v->crossed == 1 && v->lane == 1) {
         if (v->road == 'A') v->road = 'C';
         else if (v->road == 'C') v->road = 'B';
         else if (v->road == 'B') v->road = 'D';
         else if (v->road == 'D') v->road = 'A';
+
+        v->lane = 1;          // nearest right lane
         lockToLane(v);
     }
 
@@ -163,7 +162,7 @@ void moveVehicle(Vehicle* v) {
         v->crossed = 2;
 }
 
-// update all vehicles
+// update vehicles
 void updateVehicles() {
     for (int i = 0; i < 4; i++)
         for (int j = roadQueue[i].front; j <= roadQueue[i].rear; j++)
@@ -255,7 +254,7 @@ DWORD WINAPI signalThread(LPVOID arg) {
     }
 }
 
-// vehicle generator thread
+// vehicle generator
 DWORD WINAPI generatorThread(LPVOID arg) {
 
     srand((unsigned int)time(NULL));
@@ -282,7 +281,7 @@ DWORD WINAPI generatorThread(LPVOID arg) {
             }
         }
 
-        Sleep(1000); // new batch every second
+        Sleep(1000);
     }
 }
 
@@ -326,4 +325,3 @@ int main() {
     SDL_Quit();
     return 0;
 }
-
