@@ -156,24 +156,65 @@ void updateVehicles() {
 // draw roads
 void drawRoad(SDL_Renderer* r) {
 
-    SDL_SetRenderDrawColor(r, 200, 200, 200, 255);
+    // asphalt color
+    SDL_SetRenderDrawColor(r, 50, 50, 50, 255);
 
-    SDL_Rect v = { JUNCTION_LEFT, 0, ROAD_WIDTH, WINDOW_HEIGHT };
-    SDL_Rect h = { 0, JUNCTION_TOP, WINDOW_WIDTH, ROAD_WIDTH };
+    SDL_Rect verticalRoad = { JUNCTION_LEFT, 0, ROAD_WIDTH, WINDOW_HEIGHT };
+    SDL_Rect horizontalRoad = { 0, JUNCTION_TOP, WINDOW_WIDTH, ROAD_WIDTH };
 
-    SDL_RenderFillRect(r, &v);
-    SDL_RenderFillRect(r, &h);
+    SDL_RenderFillRect(r, &verticalRoad);
+    SDL_RenderFillRect(r, &horizontalRoad);
 
-    SDL_SetRenderDrawColor(r, 0, 0, 0, 255);
+    int laneSize = ROAD_WIDTH / 3;
 
-    int lane = ROAD_WIDTH / 3;
+    // dashed white lane dividers
+    SDL_SetRenderDrawColor(r, 220, 220, 220, 255);
+
     for (int i = 1; i < 3; i++) {
-        SDL_RenderDrawLine(r, JUNCTION_LEFT + i * lane, 0,
-            JUNCTION_LEFT + i * lane, WINDOW_HEIGHT);
-        SDL_RenderDrawLine(r, 0, JUNCTION_TOP + i * lane,
-            WINDOW_WIDTH, JUNCTION_TOP + i * lane);
+
+        // vertical road dashed lines
+        for (int y = 0; y < WINDOW_HEIGHT; y += 30) {
+            SDL_RenderDrawLine(
+                r,
+                JUNCTION_LEFT + i * laneSize,
+                y,
+                JUNCTION_LEFT + i * laneSize,
+                y + 15
+            );
+        }
+
+        // horizontal road dashed lines
+        for (int x = 0; x < WINDOW_WIDTH; x += 30) {
+            SDL_RenderDrawLine(
+                r,
+                x,
+                JUNCTION_TOP + i * laneSize,
+                x + 15,
+                JUNCTION_TOP + i * laneSize
+            );
+        }
     }
+
+    // solid yellow center lines
+    SDL_SetRenderDrawColor(r, 255, 200, 0, 255);
+
+    SDL_RenderDrawLine(
+        r,
+        WINDOW_WIDTH / 2,
+        0,
+        WINDOW_WIDTH / 2,
+        WINDOW_HEIGHT
+    );
+
+    SDL_RenderDrawLine(
+        r,
+        0,
+        WINDOW_HEIGHT / 2,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT / 2
+    );
 }
+
 
 // draw vehicles
 void drawVehicles(SDL_Renderer* r) {
