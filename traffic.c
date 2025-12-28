@@ -156,7 +156,12 @@ void updateVehicles() {
 // draw roads
 void drawRoad(SDL_Renderer* r) {
 
-    // asphalt color
+    // background / grass
+    SDL_SetRenderDrawColor(r, 70, 130, 70, 255);
+    SDL_Rect bg = { 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT };
+    SDL_RenderFillRect(r, &bg);
+
+    // asphalt roads
     SDL_SetRenderDrawColor(r, 50, 50, 50, 255);
 
     SDL_Rect verticalRoad = { JUNCTION_LEFT, 0, ROAD_WIDTH, WINDOW_HEIGHT };
@@ -167,12 +172,11 @@ void drawRoad(SDL_Renderer* r) {
 
     int laneSize = ROAD_WIDTH / 3;
 
-    // dashed white lane dividers
+    // dashed lane dividers
     SDL_SetRenderDrawColor(r, 220, 220, 220, 255);
 
     for (int i = 1; i < 3; i++) {
 
-        // vertical road dashed lines
         for (int y = 0; y < WINDOW_HEIGHT; y += 30) {
             SDL_RenderDrawLine(
                 r,
@@ -183,7 +187,6 @@ void drawRoad(SDL_Renderer* r) {
             );
         }
 
-        // horizontal road dashed lines
         for (int x = 0; x < WINDOW_WIDTH; x += 30) {
             SDL_RenderDrawLine(
                 r,
@@ -195,25 +198,20 @@ void drawRoad(SDL_Renderer* r) {
         }
     }
 
-    // solid yellow center lines
-    SDL_SetRenderDrawColor(r, 255, 200, 0, 255);
+    // footpaths
+    SDL_SetRenderDrawColor(r, 120, 120, 120, 255);
 
-    SDL_RenderDrawLine(
-        r,
-        WINDOW_WIDTH / 2,
-        0,
-        WINDOW_WIDTH / 2,
-        WINDOW_HEIGHT
-    );
+    SDL_Rect leftWalk = { JUNCTION_LEFT - 20, 0, 20, WINDOW_HEIGHT };
+    SDL_Rect rightWalk = { JUNCTION_RIGHT, 0, 20, WINDOW_HEIGHT };
+    SDL_Rect topWalk = { 0, JUNCTION_TOP - 20, WINDOW_WIDTH, 20 };
+    SDL_Rect bottomWalk = { 0, JUNCTION_BOTTOM, WINDOW_WIDTH, 20 };
 
-    SDL_RenderDrawLine(
-        r,
-        0,
-        WINDOW_HEIGHT / 2,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT / 2
-    );
+    SDL_RenderFillRect(r, &leftWalk);
+    SDL_RenderFillRect(r, &rightWalk);
+    SDL_RenderFillRect(r, &topWalk);
+    SDL_RenderFillRect(r, &bottomWalk);
 }
+
 
 
 // draw vehicles
@@ -238,32 +236,60 @@ void drawVehicles(SDL_Renderer* r) {
 }
 
 // draw traffic light
-void drawLight(SDL_Renderer* r, int x, int y, int green) {
+void drawLight(SDL_Renderer* r, int x, int y, int green, int horizontal) {
 
     SDL_SetRenderDrawColor(r, 120, 120, 120, 255);
-    SDL_Rect box = { x, y, 30, 50 };
+
+    SDL_Rect box;
+    if (horizontal) {
+        box = (SDL_Rect){ x, y, 50, 30 };   // horizontal light
+    }
+    else {
+        box = (SDL_Rect){ x, y, 30, 50 };   // vertical light
+    }
+
     SDL_RenderFillRect(r, &box);
 
+    // RED
     SDL_SetRenderDrawColor(r, green ? 0 : 255, 0, 0, 255);
-    SDL_Rect red = { x + 8, y + 5, 14, 14 };
-    SDL_RenderFillRect(r, &red);
+    SDL_Rect red = horizontal ?
+        (SDL_Rect) {
+        x + 5, y + 8, 14, 14
+    } :
+        (SDL_Rect) {
+        x + 8, y + 5, 14, 14
+    };
+        SDL_RenderFillRect(r, &red);
 
-    SDL_SetRenderDrawColor(r, 0, green ? 255 : 0, 0, 255);
-    SDL_Rect gr = { x + 8, y + 30, 14, 14 };
-    SDL_RenderFillRect(r, &gr);
+        // GREEN
+        SDL_SetRenderDrawColor(r, 0, green ? 255 : 0, 0, 255);
+        SDL_Rect gr = horizontal ?
+            (SDL_Rect) {
+            x + 30, y + 8, 14, 14
+        } :
+            (SDL_Rect) {
+            x + 8, y + 30, 14, 14
+        };
+            SDL_RenderFillRect(r, &gr);
 }
 
+
+// draw all 4 lights
 // draw all 4 lights
 void drawAllLights(SDL_Renderer* r) {
 
     int ab = (shared.state == AB_GREEN);
     int cd = (shared.state == CD_GREEN);
 
-    drawLight(r, 385, 300, ab);
-    drawLight(r, 385, 450, ab);
-    drawLight(r, 300, 385, cd);
-    drawLight(r, 450, 385, cd);
+    // Y-axis lights → horizontal
+    drawLight(r, 360, 300, ab, 1);
+    drawLight(r, 360, 450, ab, 1);
+
+    // X-axis lights → vertical
+    drawLight(r, 300, 360, cd, 0);
+    drawLight(r, 450, 360, cd, 0);
 }
+
 
 // signal thread
 DWORD WINAPI signalThread(LPVOID arg) {
