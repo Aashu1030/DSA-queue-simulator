@@ -3,7 +3,6 @@
 
 #include <windows.h>
 #include <SDL.h>
-#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <time.h>
@@ -12,184 +11,75 @@
 #define WINDOW_WIDTH 800
 #define WINDOW_HEIGHT 800
 #define ROAD_WIDTH 150
-#define MAX_QUEUE 200
+#define MAX_QUEUE 100
 
-#define CAR_W_V 20
-#define CAR_H_V 30
-#define CAR_W_H 30
-#define CAR_H_H 20
-
-#define STOP_OFFSET 15
-#define SPAWN_GAP 55
+#define CAR_WIDTH 20
+#define CAR_HEIGHT 30
 
 #define JUNCTION_LEFT   (WINDOW_WIDTH/2 - ROAD_WIDTH/2)
 #define JUNCTION_RIGHT  (WINDOW_WIDTH/2 + ROAD_WIDTH/2)
 #define JUNCTION_TOP    (WINDOW_HEIGHT/2 - ROAD_WIDTH/2)
 #define JUNCTION_BOTTOM (WINDOW_HEIGHT/2 + ROAD_WIDTH/2)
 
-#define NORMAL_PRIORITY 0
-#define HIGH_PRIORITY 1
-
+// Signal states for 4 roads
 typedef enum {
-    ALL_RED,
     A_GREEN,
     B_GREEN,
     C_GREEN,
     D_GREEN,
-    AB_GREEN,
-    CD_GREEN
+    ALL_RED
 } SignalState;
 
 typedef struct {
     SignalState state;
+    int timer;
     int green_duration;
-    int current_timer;
-} SharedData;
+} TrafficSignal;
 
-SharedData shared;
+TrafficSignal signal;
 
-typedef struct {
+// Vehicle structure
+typedef struct VehicleNode {
     int id;
-    char road;
-    int lane;
+    char road;          // A, B, C, D
+    int lane;           // 1, 2, 3
     float x, y;
-    int speed;
-    int crossed;
+    float speed;
     int waiting_time;
-} Vehicle;
+    struct VehicleNode* next;
+} VehicleNode;
 
+// Queue for each lane
 typedef struct {
-    Vehicle data[MAX_QUEUE];
-    int front;
-    int rear;
+    VehicleNode* front;
+    VehicleNode* rear;
     int count;
-    char name[4];
-} Queue;
+    char name[4];       // AL1, AL2, AL3, BL1, etc.
+    int is_priority;    // 1 for AL2 priority lane
+} LaneQueue;
 
-typedef struct PriorityNode {
+// Priority queue node for lane management
+typedef struct {
     char lane_id[4];
     int vehicle_count;
-    int priority;
-    struct PriorityNode* next;
-} PriorityNode;
+    int priority;       // Higher number = higher priority
+    int green_time;     // Calculated green time
+} LanePriority;
 
-typedef struct {
-    PriorityNode* front;
-    int size;
-} PriorityQueue;
+// All 12 lanes (4 roads × 3 lanes)
+LaneQueue lanes[12];
+LanePriority lane_priority[12];
+int current_green_lane = -1;
 
-Queue laneQueues[12];
-PriorityQueue priorityQueue;
-
-void initQueue(Queue* q, const char* name) {
-    q->front = q->rear = -1;
-    q->count = 0;
-    strcpy(q->name, name);
+// Initialize a lane queue
+void initLane(LaneQueue* lane, const char* name) {
+    lane->front = lane->rear = NULL;
+    lane->count = 0;
+    strcpy(lane->name, name);
+    lane->is_priority = (strcmp(name, "AL2") == 0) ? 1 : 0;
 }
 
-int isQueueEmpty(Queue* q) {
-    return q->front == -1 || q->front > q->rear;
-}
-
-int isQueueFull(Queue* q) {
-    return q->rear == MAX_QUEUE - 1;
-}
-
-void enqueue(Queue* q, Vehicle v) {
-    if (isQueueFull(q)) return;
-    if (q->front == -1) q->front = 0;
-    q->rear++;
-    q->data[q->rear] = v;
-    q->count++;
-}
-
-Vehicle dequeue(Queue* q) {
-    Vehicle empty = { 0 };
-    if (isQueueEmpty(q)) return empty;
-
-    Vehicle v = q->data[q->front];
-    q->front++;
-    q->count--;
-
-    if (q->front > q->rear) {
-        q->front = q->rear = -1;
-    }
-    return v;
-}
-
-int getQueueCount(Queue* q) {
-    return q->count;
-}
-
-void initPriorityQueue(PriorityQueue* pq) {
-    pq->front = NULL;
-    pq->size = 0;
-}
-
-void addToPriorityQueue(PriorityQueue* pq, const char* lane_id, int count, int priority) {
-    PriorityNode* new_node = (PriorityNode*)malloc(sizeof(PriorityNode));
-    strcpy(new_node->lane_id, lane_id);
-    new_node->vehicle_count = count;
-    new_node->priority = priority;
-    new_node->next = NULL;
-
-    if (pq->front == NULL) {
-        pq->front = new_node;
-    }
-    else {
-        if (priority == HIGH_PRIORITY) {
-            new_node->next = pq->front;
-            pq->front = new_node;
-        }
-        else {
-            PriorityNode* current = pq->front;
-            while (current->next != NULL && current->next->priority == HIGH_PRIORITY) {
-                current = current->next;
-            }
-            new_node->next = current->next;
-            current->next = new_node;
-        }
-    }
-    pq->size++;
-}
-
-void updatePriorityQueue(PriorityQueue* pq, const char* lane_id, int new_count) {
-    PriorityNode* current = pq->front;
-    while (current != NULL) {
-        if (strcmp(current->lane_id, lane_id) == 0) {
-            current->vehicle_count = new_count;
-            if (strcmp(lane_id, "AL2") == 0) {
-                if (new_count > 10) {
-                    current->priority = HIGH_PRIORITY;
-                }
-                else if (new_count < 5) {
-                    current->priority = NORMAL_PRIORITY;
-                }
-            }
-            break;
-        }
-        current = current->next;
-    }
-}
-
-char* getHighestPriorityLane(PriorityQueue* pq) {
-    if (pq->front == NULL) return NULL;
-
-    PriorityNode* highest = pq->front;
-    PriorityNode* current = pq->front;
-
-    while (current != NULL) {
-        if (current->priority > highest->priority ||
-            (current->priority == highest->priority &&
-                current->vehicle_count > highest->vehicle_count)) {
-            highest = current;
-        }
-        current = current->next;
-    }
-
-    return highest->lane_id;
-}
-
+// Initialize all lanes
 void initAllLanes() {
     char* lane_names[] = {
         "AL1", "AL2", "AL3",
@@ -199,23 +89,92 @@ void initAllLanes() {
     };
 
     for (int i = 0; i < 12; i++) {
-        initQueue(&laneQueues[i], lane_names[i]);
-    }
-
-    initPriorityQueue(&priorityQueue);
-
-    for (int i = 0; i < 12; i++) {
-        addToPriorityQueue(&priorityQueue, laneQueues[i].name, 0, NORMAL_PRIORITY);
+        initLane(&lanes[i], lane_names[i]);
+        strcpy(lane_priority[i].lane_id, lane_names[i]);
+        lane_priority[i].vehicle_count = 0;
+        lane_priority[i].priority = 0;
+        lane_priority[i].green_time = 3000; // Default 3 seconds
     }
 }
 
+// Add vehicle to lane queue
+void addVehicleToLane(LaneQueue* lane, char road, int lane_num) {
+    VehicleNode* new_vehicle = (VehicleNode*)malloc(sizeof(VehicleNode));
+    static int vehicle_id = 1;
+
+    new_vehicle->id = vehicle_id++;
+    new_vehicle->road = road;
+    new_vehicle->lane = lane_num;
+    new_vehicle->speed = 2.0f;
+    new_vehicle->waiting_time = 0;
+    new_vehicle->next = NULL;
+
+    // Set starting position based on road and lane
+    int lane_width = ROAD_WIDTH / 3;
+    int lane_offset = (lane_num - 1) * lane_width;
+
+    if (road == 'A') { // Top to Bottom
+        new_vehicle->x = JUNCTION_LEFT + lane_offset + (lane_width - CAR_WIDTH) / 2;
+        new_vehicle->y = JUNCTION_TOP - 100;
+    }
+    else if (road == 'B') { // Bottom to Top
+        new_vehicle->x = JUNCTION_LEFT + lane_offset + (lane_width - CAR_WIDTH) / 2;
+        new_vehicle->y = JUNCTION_BOTTOM + 100;
+    }
+    else if (road == 'C') { // Right to Left
+        new_vehicle->x = JUNCTION_RIGHT + 100;
+        new_vehicle->y = JUNCTION_TOP + lane_offset + (lane_width - CAR_HEIGHT) / 2;
+    }
+    else if (road == 'D') { // Left to Right
+        new_vehicle->x = JUNCTION_LEFT - 100;
+        new_vehicle->y = JUNCTION_TOP + lane_offset + (lane_width - CAR_HEIGHT) / 2;
+    }
+
+    // Add to queue
+    if (lane->rear == NULL) {
+        lane->front = lane->rear = new_vehicle;
+    }
+    else {
+        lane->rear->next = new_vehicle;
+        lane->rear = new_vehicle;
+    }
+    lane->count++;
+}
+
+// Remove vehicle from lane (when it crosses)
+void removeVehicleFromLane(LaneQueue* lane, int vehicle_id) {
+    VehicleNode* current = lane->front;
+    VehicleNode* prev = NULL;
+
+    while (current != NULL) {
+        if (current->id == vehicle_id) {
+            if (prev == NULL) {
+                lane->front = current->next;
+            }
+            else {
+                prev->next = current->next;
+            }
+            if (current == lane->rear) {
+                lane->rear = prev;
+            }
+            free(current);
+            lane->count--;
+            break;
+        }
+        prev = current;
+        current = current->next;
+    }
+}
+
+// Calculate vehicles to serve using formula: |V| = 1/n * Σ|Li|
 float calculateVehiclesToServe() {
-    int normal_lane_indices[] = { 4, 8, 11 };
+    // Normal lanes: BL2 (index 4), CL3 (index 8), DL3 (index 11)
+    int normal_lanes[] = { 4, 8, 11 };
     int n = 3;
     int total_vehicles = 0;
 
     for (int i = 0; i < n; i++) {
-        total_vehicles += getQueueCount(&laneQueues[normal_lane_indices[i]]);
+        total_vehicles += lanes[normal_lanes[i]].count;
     }
 
     if (n > 0) {
@@ -224,271 +183,265 @@ float calculateVehiclesToServe() {
     return 1.0;
 }
 
-int getLaneIndex(char road, int lane) {
-    int base = 0;
-    switch (road) {
-    case 'A': base = 0; break;
-    case 'B': base = 3; break;
-    case 'C': base = 6; break;
-    case 'D': base = 9; break;
+// Update priority for AL2 lane
+void updatePrioritySystem() {
+    int al2_index = 1; // AL2 is at index 1
+
+    if (lanes[al2_index].count > 10) {
+        lane_priority[al2_index].priority = 10; // Highest priority
     }
-    return base + (lane - 1);
-}
-
-void lockToLane(Vehicle* v) {
-    int laneSize = ROAD_WIDTH / 3;
-    int laneIndex = (v->lane - 1) * laneSize;
-
-    switch (v->road) {
-    case 'A':
-    case 'B':
-        v->x = JUNCTION_LEFT + laneIndex + (laneSize - CAR_W_V) / 2;
-        break;
-    case 'C':
-    case 'D':
-        v->y = JUNCTION_TOP + laneIndex + (laneSize - CAR_H_H) / 2;
-        break;
-    }
-}
-
-int mustStop(Vehicle* v) {
-    if (v->lane != 2) return 0;
-
-    switch (v->road) {
-    case 'A': return (shared.state != A_GREEN && shared.state != AB_GREEN);
-    case 'B': return (shared.state != B_GREEN && shared.state != AB_GREEN);
-    case 'C': return (shared.state != C_GREEN && shared.state != CD_GREEN);
-    case 'D': return (shared.state != D_GREEN && shared.state != CD_GREEN);
-    }
-    return 1;
-}
-
-int shouldTurnLeft(Vehicle* v) {
-    return (v->lane == 3 && v->crossed == 1);
-}
-
-void performLeftTurn(Vehicle* v) {
-    switch (v->road) {
-    case 'A':
-        v->road = 'D';
-        v->x = JUNCTION_LEFT;
-        v->y = JUNCTION_TOP + ROAD_WIDTH - CAR_H_H;
-        v->lane = 1;
-        break;
-    case 'B':
-        v->road = 'C';
-        v->x = JUNCTION_RIGHT - CAR_W_H;
-        v->y = JUNCTION_BOTTOM;
-        v->lane = 1;
-        break;
-    case 'C':
-        v->road = 'A';
-        v->x = JUNCTION_RIGHT - CAR_W_V;
-        v->y = JUNCTION_TOP;
-        v->lane = 1;
-        break;
-    case 'D':
-        v->road = 'B';
-        v->x = JUNCTION_LEFT;
-        v->y = JUNCTION_BOTTOM - CAR_H_V;
-        v->lane = 1;
-        break;
-    }
-    v->crossed = 0;
-    lockToLane(v);
-}
-
-void moveVehicle(Vehicle* v) {
-    lockToLane(v);
-
-    if (!v->crossed && mustStop(v)) {
-        switch (v->road) {
-        case 'A':
-            if (v->y + CAR_H_V >= JUNCTION_TOP - STOP_OFFSET) {
-                v->waiting_time++;
-                return;
-            }
-            break;
-        case 'B':
-            if (v->y - CAR_H_V <= JUNCTION_BOTTOM + STOP_OFFSET) {
-                v->waiting_time++;
-                return;
-            }
-            break;
-        case 'C':
-            if (v->x - CAR_W_H <= JUNCTION_RIGHT + STOP_OFFSET) {
-                v->waiting_time++;
-                return;
-            }
-            break;
-        case 'D':
-            if (v->x + CAR_W_H >= JUNCTION_LEFT - STOP_OFFSET) {
-                v->waiting_time++;
-                return;
-            }
-            break;
-        }
-        v->waiting_time = 0;
+    else if (lanes[al2_index].count < 5) {
+        lane_priority[al2_index].priority = 0; // Normal priority
     }
 
-    switch (v->road) {
-    case 'A': v->y += v->speed; break;
-    case 'B': v->y -= v->speed; break;
-    case 'C': v->x -= v->speed; break;
-    case 'D': v->x += v->speed; break;
-    }
-
-    if (!v->crossed) {
-        switch (v->road) {
-        case 'A': v->crossed = (v->y >= JUNCTION_BOTTOM); break;
-        case 'B': v->crossed = (v->y <= JUNCTION_TOP); break;
-        case 'C': v->crossed = (v->x <= JUNCTION_LEFT); break;
-        case 'D': v->crossed = (v->x >= JUNCTION_RIGHT); break;
-        }
-    }
-
-    if (shouldTurnLeft(v)) {
-        performLeftTurn(v);
-    }
-
-    if (v->x < -100 || v->x > WINDOW_WIDTH + 100 ||
-        v->y < -100 || v->y > WINDOW_HEIGHT + 100) {
-        v->crossed = 2;
-    }
-}
-
-void updateAllVehicles() {
+    // Update vehicle counts
     for (int i = 0; i < 12; i++) {
-        for (int j = laneQueues[i].front;
-            j <= laneQueues[i].rear && j != -1; j++) {
-            if (laneQueues[i].data[j].crossed != 2) {
-                moveVehicle(&laneQueues[i].data[j]);
+        lane_priority[i].vehicle_count = lanes[i].count;
+    }
+}
+
+// Get lane with highest priority
+int getHighestPriorityLane() {
+    int highest_priority = -1;
+    int lane_index = -1;
+
+    for (int i = 0; i < 12; i++) {
+        if (lane_priority[i].priority > highest_priority) {
+            highest_priority = lane_priority[i].priority;
+            lane_index = i;
+        }
+    }
+
+    return lane_index;
+}
+
+// Move vehicles
+void moveVehicles() {
+    for (int i = 0; i < 12; i++) {
+        VehicleNode* current = lanes[i].front;
+
+        while (current != NULL) {
+            // Check if vehicle should stop (only lane 2 stops at signals)
+            int should_move = 1;
+
+            if (current->lane == 2) { // Main lane
+                switch (current->road) {
+                case 'A': should_move = (signal.state == A_GREEN); break;
+                case 'B': should_move = (signal.state == B_GREEN); break;
+                case 'C': should_move = (signal.state == C_GREEN); break;
+                case 'D': should_move = (signal.state == D_GREEN); break;
+                }
             }
+
+            if (should_move) {
+                // Move based on road direction
+                switch (current->road) {
+                case 'A': current->y += current->speed; break;
+                case 'B': current->y -= current->speed; break;
+                case 'C': current->x -= current->speed; break;
+                case 'D': current->x += current->speed; break;
+                }
+
+                // Check if crossed junction
+                int crossed = 0;
+                switch (current->road) {
+                case 'A': crossed = (current->y >= JUNCTION_BOTTOM); break;
+                case 'B': crossed = (current->y <= JUNCTION_TOP); break;
+                case 'C': crossed = (current->x <= JUNCTION_LEFT); break;
+                case 'D': crossed = (current->x >= JUNCTION_RIGHT); break;
+                }
+
+                if (crossed) {
+                    // Handle left turn for lane 3
+                    if (current->lane == 3) {
+                        // Simple left turn: remove vehicle
+                        VehicleNode* to_remove = current;
+                        current = current->next;
+                        removeVehicleFromLane(&lanes[i], to_remove->id);
+                        continue;
+                    }
+                    else {
+                        // Remove vehicle after crossing
+                        VehicleNode* to_remove = current;
+                        current = current->next;
+                        removeVehicleFromLane(&lanes[i], to_remove->id);
+                        continue;
+                    }
+                }
+            }
+            else {
+                // Vehicle is waiting at red light
+                current->waiting_time++;
+            }
+
+            // Remove if off screen
+            if (current->x < -200 || current->x > WINDOW_WIDTH + 200 ||
+                current->y < -200 || current->y > WINDOW_HEIGHT + 200) {
+                VehicleNode* to_remove = current;
+                current = current->next;
+                removeVehicleFromLane(&lanes[i], to_remove->id);
+                continue;
+            }
+
+            current = current->next;
         }
     }
 }
 
+// Read lane data from generator files
 void readLaneDataFromFiles() {
+    char* lane_names[] = { "AL1", "AL2", "AL3", "BL1", "BL2", "BL3", "CL1", "CL2", "CL3", "DL1", "DL2", "DL3" };
+
     for (int i = 0; i < 12; i++) {
         char filename[20];
-        sprintf(filename, "%s.txt", laneQueues[i].name);
+        sprintf(filename, "%s.txt", lane_names[i]);
 
         FILE* f = fopen(filename, "r");
         if (f) {
             int count;
             fscanf(f, "%d", &count);
+            fclose(f);
 
-            int current_count = getQueueCount(&laneQueues[i]);
-            if (count > current_count) {
-                for (int j = current_count; j < count; j++) {
-                    Vehicle v = { 0 };
-                    v.id = (i * 100) + j + 1;
-                    v.road = laneQueues[i].name[0];
-                    v.lane = laneQueues[i].name[2] - '0';
-                    v.speed = 2;
-                    v.crossed = 0;
-                    v.waiting_time = 0;
-
-                    switch (v.road) {
-                    case 'A': v.y = -v.lane * SPAWN_GAP; break;
-                    case 'B': v.y = WINDOW_HEIGHT + v.lane * SPAWN_GAP; break;
-                    case 'C': v.x = WINDOW_WIDTH + v.lane * SPAWN_GAP; break;
-                    case 'D': v.x = -v.lane * SPAWN_GAP; break;
-                    }
-
-                    enqueue(&laneQueues[i], v);
-                }
+            // Clear current queue
+            while (lanes[i].front != NULL) {
+                removeVehicleFromLane(&lanes[i], lanes[i].front->id);
             }
 
-            updatePriorityQueue(&priorityQueue, laneQueues[i].name, count);
+            // Add vehicles based on count
+            char road = lane_names[i][0];
+            int lane_num = lane_names[i][2] - '0';
 
-            fclose(f);
+            for (int j = 0; j < count; j++) {
+                addVehicleToLane(&lanes[i], road, lane_num);
+            }
         }
     }
 }
 
-void initSDL(SDL_Window** w, SDL_Renderer** r) {
-    SDL_Init(SDL_INIT_VIDEO);
-    *w = SDL_CreateWindow("Traffic Junction Simulator",
-        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH, WINDOW_HEIGHT, 0);
-    *r = SDL_CreateRenderer(*w, -1, SDL_RENDERER_ACCELERATED);
+// Update traffic signal
+void updateTrafficSignal() {
+    signal.timer--;
+
+    if (signal.timer <= 0) {
+        // Get lane with highest priority
+        int priority_lane = getHighestPriorityLane();
+
+        if (priority_lane != -1 && lane_priority[priority_lane].priority > 0) {
+            // Serve priority lane
+            char road = lanes[priority_lane].name[0];
+            switch (road) {
+            case 'A': signal.state = A_GREEN; break;
+            case 'B': signal.state = B_GREEN; break;
+            case 'C': signal.state = C_GREEN; break;
+            case 'D': signal.state = D_GREEN; break;
+            }
+            current_green_lane = priority_lane;
+        }
+        else {
+            // Normal rotation
+            switch (signal.state) {
+            case A_GREEN: signal.state = B_GREEN; break;
+            case B_GREEN: signal.state = C_GREEN; break;
+            case C_GREEN: signal.state = D_GREEN; break;
+            case D_GREEN: signal.state = A_GREEN; break;
+            default: signal.state = A_GREEN; break;
+            }
+            current_green_lane = -1;
+        }
+
+        // Calculate green time based on vehicles to serve
+        float vehicles_to_serve = calculateVehiclesToServe();
+        signal.green_duration = (int)(vehicles_to_serve * 100); // 100ms per vehicle
+        if (signal.green_duration < 2000) signal.green_duration = 2000;
+        if (signal.green_duration > 5000) signal.green_duration = 5000;
+
+        signal.timer = signal.green_duration;
+    }
 }
 
-void drawRoad(SDL_Renderer* r) {
+// Signal thread
+DWORD WINAPI signalThread(LPVOID arg) {
+    signal.state = A_GREEN;
+    signal.timer = 3000;
+    signal.green_duration = 3000;
+
+    while (1) {
+        updateTrafficSignal();
+        Sleep(100); // Update every 100ms
+    }
+}
+
+// SDL Drawing functions
+void initSDL(SDL_Window** window, SDL_Renderer** renderer) {
+    SDL_Init(SDL_INIT_VIDEO);
+    *window = SDL_CreateWindow("Traffic Junction Simulator",
+        SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
+        WINDOW_WIDTH, WINDOW_HEIGHT, 0);
+    *renderer = SDL_CreateRenderer(*window, -1, SDL_RENDERER_ACCELERATED);
+}
+
+void drawRoads(SDL_Renderer* r) {
+    // Grass
     SDL_SetRenderDrawColor(r, 70, 130, 70, 255);
     SDL_Rect bg = { 0, 0, WINDOW_WIDTH, WINDOW_HEIGHT };
     SDL_RenderFillRect(r, &bg);
 
+    // Roads
     SDL_SetRenderDrawColor(r, 50, 50, 50, 255);
-    SDL_Rect verticalRoad = { JUNCTION_LEFT, 0, ROAD_WIDTH, WINDOW_HEIGHT };
-    SDL_Rect horizontalRoad = { 0, JUNCTION_TOP, WINDOW_WIDTH, ROAD_WIDTH };
-    SDL_RenderFillRect(r, &verticalRoad);
-    SDL_RenderFillRect(r, &horizontalRoad);
+    SDL_Rect vertical = { JUNCTION_LEFT, 0, ROAD_WIDTH, WINDOW_HEIGHT };
+    SDL_Rect horizontal = { 0, JUNCTION_TOP, WINDOW_WIDTH, ROAD_WIDTH };
+    SDL_RenderFillRect(r, &vertical);
+    SDL_RenderFillRect(r, &horizontal);
 
-    int laneSize = ROAD_WIDTH / 3;
-    SDL_SetRenderDrawColor(r, 220, 220, 220, 255);
+    // Lane markings
+    int lane_width = ROAD_WIDTH / 3;
+    SDL_SetRenderDrawColor(r, 255, 255, 255, 255);
     for (int i = 1; i < 3; i++) {
         for (int y = 0; y < WINDOW_HEIGHT; y += 30) {
-            SDL_RenderDrawLine(r, JUNCTION_LEFT + i * laneSize, y,
-                JUNCTION_LEFT + i * laneSize, y + 15);
+            SDL_RenderDrawLine(r, JUNCTION_LEFT + i * lane_width, y,
+                JUNCTION_LEFT + i * lane_width, y + 15);
         }
         for (int x = 0; x < WINDOW_WIDTH; x += 30) {
-            SDL_RenderDrawLine(r, x, JUNCTION_TOP + i * laneSize,
-                x + 15, JUNCTION_TOP + i * laneSize);
+            SDL_RenderDrawLine(r, x, JUNCTION_TOP + i * lane_width,
+                x + 15, JUNCTION_TOP + i * lane_width);
         }
     }
-
-    SDL_SetRenderDrawColor(r, 120, 120, 120, 255);
-    SDL_Rect leftWalk = { JUNCTION_LEFT - 20, 0, 20, WINDOW_HEIGHT };
-    SDL_Rect rightWalk = { JUNCTION_RIGHT, 0, 20, WINDOW_HEIGHT };
-    SDL_Rect topWalk = { 0, JUNCTION_TOP - 20, WINDOW_WIDTH, 20 };
-    SDL_Rect bottomWalk = { 0, JUNCTION_BOTTOM, WINDOW_WIDTH, 20 };
-    SDL_RenderFillRect(r, &leftWalk);
-    SDL_RenderFillRect(r, &rightWalk);
-    SDL_RenderFillRect(r, &topWalk);
-    SDL_RenderFillRect(r, &bottomWalk);
 }
 
 void drawVehicles(SDL_Renderer* r) {
     for (int i = 0; i < 12; i++) {
-        for (int j = laneQueues[i].front;
-            j <= laneQueues[i].rear && j != -1; j++) {
+        VehicleNode* current = lanes[i].front;
 
-            Vehicle* v = &laneQueues[i].data[j];
-            if (v->crossed == 2) continue;
-
-            if (strcmp(laneQueues[i].name, "AL2") == 0 &&
-                laneQueues[i].count > 10) {
-                SDL_SetRenderDrawColor(r, 255, 0, 0, 255);
+        while (current != NULL) {
+            // Color coding
+            if (strcmp(lanes[i].name, "AL2") == 0 && lanes[i].count > 10) {
+                SDL_SetRenderDrawColor(r, 255, 0, 0, 255); // Red for priority
             }
-            else if (v->lane == 3) {
-                SDL_SetRenderDrawColor(r, 0, 255, 0, 255);
+            else if (current->lane == 3) {
+                SDL_SetRenderDrawColor(r, 0, 255, 0, 255); // Green for left lane
             }
-            else if (v->lane == 2) {
-                SDL_SetRenderDrawColor(r, 0, 0, 255, 255);
+            else if (current->lane == 2) {
+                SDL_SetRenderDrawColor(r, 0, 0, 255, 255); // Blue for main lane
             }
             else {
-                SDL_SetRenderDrawColor(r, 255, 255, 0, 255);
+                SDL_SetRenderDrawColor(r, 255, 255, 0, 255); // Yellow for right lane
             }
 
-            SDL_Rect car;
-            car.x = (int)v->x;
-            car.y = (int)v->y;
-            if (v->road == 'A' || v->road == 'B') {
-                car.w = CAR_W_V;
-                car.h = CAR_H_V;
-            }
-            else {
-                car.w = CAR_W_H;
-                car.h = CAR_H_H;
-            }
+            SDL_Rect car = {
+                (int)current->x,
+                (int)current->y,
+                CAR_WIDTH,
+                CAR_HEIGHT
+            };
             SDL_RenderFillRect(r, &car);
+
+            current = current->next;
         }
     }
 }
 
-void drawLight(SDL_Renderer* r, int x, int y, int green, int horizontal) {
+void drawTrafficLight(SDL_Renderer* r, int x, int y, int green, int horizontal) {
+    // Light box
     SDL_SetRenderDrawColor(r, 120, 120, 120, 255);
     SDL_Rect box;
     box.x = x;
@@ -503,6 +456,7 @@ void drawLight(SDL_Renderer* r, int x, int y, int green, int horizontal) {
     }
     SDL_RenderFillRect(r, &box);
 
+    // Red light
     SDL_SetRenderDrawColor(r, green ? 0 : 255, 0, 0, 255);
     SDL_Rect red;
     if (horizontal) {
@@ -519,121 +473,66 @@ void drawLight(SDL_Renderer* r, int x, int y, int green, int horizontal) {
     }
     SDL_RenderFillRect(r, &red);
 
+    // Green light
     SDL_SetRenderDrawColor(r, 0, green ? 255 : 0, 0, 255);
-    SDL_Rect gr;
+    SDL_Rect green_light;
     if (horizontal) {
-        gr.x = x + 30;
-        gr.y = y + 8;
-        gr.w = 14;
-        gr.h = 14;
+        green_light.x = x + 30;
+        green_light.y = y + 8;
+        green_light.w = 14;
+        green_light.h = 14;
     }
     else {
-        gr.x = x + 8;
-        gr.y = y + 30;
-        gr.w = 14;
-        gr.h = 14;
+        green_light.x = x + 8;
+        green_light.y = y + 30;
+        green_light.w = 14;
+        green_light.h = 14;
     }
-    SDL_RenderFillRect(r, &gr);
+    SDL_RenderFillRect(r, &green_light);
 }
 
 void drawAllLights(SDL_Renderer* r) {
-    int a_green = (shared.state == A_GREEN || shared.state == AB_GREEN);
-    int b_green = (shared.state == B_GREEN || shared.state == AB_GREEN);
-    int c_green = (shared.state == C_GREEN || shared.state == CD_GREEN);
-    int d_green = (shared.state == D_GREEN || shared.state == CD_GREEN);
+    int a_green = (signal.state == A_GREEN);
+    int b_green = (signal.state == B_GREEN);
+    int c_green = (signal.state == C_GREEN);
+    int d_green = (signal.state == D_GREEN);
 
-    drawLight(r, 360, 250, a_green, 1);
-    drawLight(r, 360, 520, b_green, 1);
-    drawLight(r, 520, 360, c_green, 0);
-    drawLight(r, 250, 360, d_green, 0);
+    drawTrafficLight(r, 360, 250, a_green, 1);    // Top (A)
+    drawTrafficLight(r, 360, 520, b_green, 1);    // Bottom (B)
+    drawTrafficLight(r, 520, 360, c_green, 0);    // Right (C)
+    drawTrafficLight(r, 250, 360, d_green, 0);    // Left (D)
 }
 
-void updateTrafficSignals() {
-    shared.current_timer--;
-
-    if (shared.current_timer <= 0) {
-        char* highest_priority = getHighestPriorityLane(&priorityQueue);
-
-        if (highest_priority != NULL) {
-            switch (highest_priority[0]) {
-            case 'A': shared.state = A_GREEN; break;
-            case 'B': shared.state = B_GREEN; break;
-            case 'C': shared.state = C_GREEN; break;
-            case 'D': shared.state = D_GREEN; break;
-            }
-        }
-        else {
-            if (shared.state == AB_GREEN || shared.state == A_GREEN || shared.state == B_GREEN) {
-                shared.state = CD_GREEN;
-            }
-            else {
-                shared.state = AB_GREEN;
-            }
-        }
-
-        float vehicles_to_serve = calculateVehiclesToServe();
-        shared.green_duration = (int)(vehicles_to_serve * 30);
-        if (shared.green_duration < 1000) shared.green_duration = 1000;
-        if (shared.green_duration > 5000) shared.green_duration = 5000;
-
-        shared.current_timer = shared.green_duration;
-    }
-}
-
-DWORD WINAPI signalThread(LPVOID arg) {
-    shared.state = ALL_RED;
-    shared.green_duration = 3000;
-    shared.current_timer = 1000;
-
-    while (1) {
-        updateTrafficSignals();
-        Sleep(100);
-    }
-}
-
-void displayQueueInfo() {
+void displayStatus() {
     system("cls");
+    printf("=== TRAFFIC JUNCTION SIMULATOR ===\n");
 
-    printf("=== Traffic Junction Simulator ===\n");
     printf("Current Signal: ");
-    switch (shared.state) {
-    case ALL_RED: printf("ALL RED\n"); break;
-    case A_GREEN: printf("A GREEN (Priority)\n"); break;
-    case B_GREEN: printf("B GREEN (Priority)\n"); break;
-    case C_GREEN: printf("C GREEN (Priority)\n"); break;
-    case D_GREEN: printf("D GREEN (Priority)\n"); break;
-    case AB_GREEN: printf("A & B GREEN\n"); break;
-    case CD_GREEN: printf("C & D GREEN\n"); break;
+    switch (signal.state) {
+    case A_GREEN: printf("A GREEN"); break;
+    case B_GREEN: printf("B GREEN"); break;
+    case C_GREEN: printf("C GREEN"); break;
+    case D_GREEN: printf("D GREEN"); break;
+    case ALL_RED: printf("ALL RED"); break;
     }
-    printf("Green Light Duration: %d ms\n", shared.green_duration);
+    printf(" (Time: %d ms)\n", signal.timer);
+
     printf("Vehicles to serve (|V|): %.2f\n\n", calculateVehiclesToServe());
 
-    printf("Lane Queue Status:\n");
-    printf("------------------\n");
+    printf("Lane Status:\n");
+    printf("------------\n");
     for (int i = 0; i < 12; i++) {
-        printf("%s: %d vehicles", laneQueues[i].name, laneQueues[i].count);
+        printf("%s: %d vehicles", lanes[i].name, lanes[i].count);
 
-        PriorityNode* current = priorityQueue.front;
-        while (current != NULL) {
-            if (strcmp(current->lane_id, laneQueues[i].name) == 0) {
-                if (current->priority == HIGH_PRIORITY) {
-                    printf(" [HIGH PRIORITY]");
-                }
-                break;
-            }
-            current = current->next;
+        if (lanes[i].is_priority && lanes[i].count > 10) {
+            printf(" [HIGH PRIORITY]");
         }
         printf("\n");
     }
 
-    int al2_idx = getLaneIndex('A', 2);
-    if (laneQueues[al2_idx].count > 10) {
-        printf("\nAL2 has %d vehicles (>10) - HIGH PRIORITY ACTIVE\n",
-            laneQueues[al2_idx].count);
-    }
-    else if (laneQueues[al2_idx].count < 5) {
-        printf("\nAL2 has %d vehicles (<5) - NORMAL PRIORITY\n",
-            laneQueues[al2_idx].count);
+    // Show AL2 status
+    if (lanes[1].count > 10) {
+        printf("\n AL2 PRIORITY ACTIVE! (%d vehicles > 10)\n", lanes[1].count);
     }
 }
 
@@ -646,42 +545,58 @@ int main() {
     initSDL(&window, &renderer);
     initAllLanes();
 
+    // Start signal thread
     CreateThread(NULL, 0, signalThread, NULL, 0, NULL);
 
-    SDL_Event e;
+    SDL_Event event;
     int running = 1;
-    int last_display_time = 0;
+    int last_status = 0;
 
     printf("Traffic Simulator Started!\n");
-    printf("==========================\n");
-    printf("Make sure traffic_generator.exe is running\n");
-    printf("Press 'Q' in console to exit\n\n");
+    printf("Run traffic_generator.exe in another terminal\n");
+    printf("Press any key to quit\n\n");
+
+    // Add some initial vehicles for testing
+    for (int i = 0; i < 3; i++) {
+        addVehicleToLane(&lanes[0], 'A', 1); // AL1
+        addVehicleToLane(&lanes[1], 'A', 2); // AL2
+        addVehicleToLane(&lanes[2], 'A', 3); // AL3
+        addVehicleToLane(&lanes[3], 'B', 1); // BL1
+    }
 
     while (running) {
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT)
+        // Handle events
+        while (SDL_PollEvent(&event)) {
+            if (event.type == SDL_QUIT)
                 running = 0;
         }
 
+        // Check for quit
         if (_kbhit()) {
-            char ch = getchar();
-            if (ch == 'q' || ch == 'Q') {
-                running = 0;
-            }
+            getchar();
+            running = 0;
         }
 
+        // Read data from generator
         readLaneDataFromFiles();
-        updateAllVehicles();
 
-        if (SDL_GetTicks() - last_display_time > 500) {
-            displayQueueInfo();
-            last_display_time = SDL_GetTicks();
+        // Update priority system
+        updatePrioritySystem();
+
+        // Move vehicles
+        moveVehicles();
+
+        // Display status
+        if (SDL_GetTicks() - last_status > 500) {
+            displayStatus();
+            last_status = SDL_GetTicks();
         }
 
+        // Draw everything
         SDL_SetRenderDrawColor(renderer, 255, 255, 255, 255);
         SDL_RenderClear(renderer);
 
-        drawRoad(renderer);
+        drawRoads(renderer);
         drawAllLights(renderer);
         drawVehicles(renderer);
 
@@ -690,7 +605,7 @@ int main() {
     }
 
     SDL_Quit();
-    printf("\nSimulator stopped.\n");
+    printf("\nSimulation ended.\n");
 
     return 0;
 }
