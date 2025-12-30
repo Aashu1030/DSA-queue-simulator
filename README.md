@@ -1,4 +1,7 @@
-# Traffic Simulator - Project Documentation
+# Traffic Simulator
+
+---
+![Demo](giphy.gif)
 
 ---
 
@@ -6,193 +9,350 @@
 
 **Assignment Number:** Assignment 1 - Queue Data Structure Implementation  
 **Course:** Data Structures and Algorithms  
-**Student Name:** [Aashutosh karki]  
-**Roll Number:** [33]  
-**Semester:** [3rd semester]  
+**Student Name:** Aashutosh Karki  
+**Roll Number:** 33  
+**Semester:** 3rd Semester  
 **Date of Submission:** December 28, 2025  
 
 ---
 
-## 1. Traffic Junction Simulation Using Queue
+## 1. Project Overview
 
-A traffic junction connects two major roads, forming a central point where vehicles must choose one of the available paths to continue. This project simulates a traffic junction management system using queue-based linear data structures. Vehicles arrive continuously from two perpendicular roads and are managed using traffic signals, predefined lane rules, and FIFO queues.
+A comprehensive four-way traffic junction simulation system implementing queue data structures to manage vehicle flow, turning behavior, and intelligent signal control. This enhanced version builds upon the basic traffic simulator by adding realistic vehicle turning, priority-based signal timing, and dynamic traffic management.
 
-The simulation demonstrates how linear data structures such as queues can be applied to solve real-world traffic management problems. SDL2 is used to visualize vehicle movement, lane behavior, and signal-controlled intersections in real time.
-
----
-
-## 2. Objective
-
-The objectives of this assignment are as follows:
-
-- To apply queue data structures for managing vehicle flow  
-- To simulate a traffic junction with multiple roads and lanes  
-- To visualize traffic movement and signal control using SDL2  
-- To enforce signal-based stopping and movement rules  
-- To support continuous vehicle generation  
+The system visualizes real-time traffic movement using SDL2 graphics library, demonstrating practical application of linear data structures in solving complex real-world problems.
 
 ---
 
-## 3. System Details
+## 2. Objectives
 
-### 3.1 Road and Lane Design
-
-The junction consists of two perpendicular roads:
-
-- **Road A:** Vertical direction (North to South)  
-- **Road C:** Horizontal direction (East to West)  
-
-These roads intersect at the center of the simulation window.
-
-Each road contains three lanes:
-
-- **Lane 1:** Right-side normal lane  
-- **Lane 2:** Main lane (signal-controlled)  
-- **Lane 3:** Free left-turn lane  
-
-Lane rules are defined as follows:
-
-- Vehicles in Lane 2 must obey traffic signal states  
-- Vehicles in Lane 3 are allowed to turn left without stopping  
-- Lane 1 and Lane 3 are not affected by signal states  
-- Vehicles remain aligned to the center of their respective lanes during movement  
+- Implement FIFO queue data structures for managing 12 traffic lanes  
+- Simulate realistic vehicle turning behavior (straight, left, right)  
+- Visualize traffic flow with proper signal compliance and stopping rules  
+- Implement dynamic signal timing based on traffic density  
+- Create priority-based traffic control for congested lanes  
+- Demonstrate continuous vehicle generation with random turn assignments  
+- Provide file-based external control of traffic parameters  
 
 ---
 
-### 3.2 Vehicle Model
+## 3. System Architecture
 
-Each vehicle in the simulation contains the following attributes:
+### 3.1 Road Network Design
 
-- Road identifier (A or C)  
-- Lane number (1–3)  
-- Position coordinates (x, y)  
-- Speed  
-- Crossing state  
+The simulation models a complete four-way intersection with perpendicular roads:
 
-Vehicle states are defined as:
+**Road Layout:**
+- **Road A:** North-South direction (Top → Bottom)
+- **Road B:** South-North direction (Bottom → Top)  
+- **Road C:** East-West direction (Right → Left)
+- **Road D:** West-East direction (Left → Right)
 
-- **State 0:** Approaching the junction  
-- **State 1:** Crossed the junction  
-- **State 2:** Exited the simulation  
+**Lane Configuration (per road):**
+- **Lane 1:** Right lane - Can turn right or go straight
+- **Lane 2:** Middle lane - Signal-controlled, must stop at red
+- **Lane 3:** Left lane - Left-turn only lane
+
+---
+
+### 3.2 Vehicle Behavior System
+
+**Vehicle Attributes:**
+- Road identifier (A, B, C, D)
+- Lane number (1, 2, 3)
+- Position coordinates (x, y)
+- Target coordinates for turning
+- Speed and movement angle
+- Turning direction (STRAIGHT, LEFT, RIGHT)
+- Waiting time counter
+
+**Turning Rules:**
+- Lane 1: Random assignment of LEFT, RIGHT, or STRAIGHT
+- Lane 2: STRAIGHT only (signal-controlled)
+- Lane 3: LEFT turn only
+
+**Movement Logic:**
+- Path following with smooth trajectory
+- Proper stopping at red signals (Lane 2 only)
+- Speed adjustment based on traffic conditions
+- Automatic removal after exiting simulation area
 
 ---
 
 ### 3.3 Queue Implementation
 
-Two FIFO (First-In-First-Out) queues are used in the system:
+**Data Structure Design:**
+- 12 separate FIFO queues (3 lanes × 4 roads)
+- Linked list implementation for dynamic sizing
+- Maximum capacity: 20 vehicles per lane
+- Queue naming convention: [Road][Lane] (e.g., AL1, BL2)
 
-- One queue for Road A  
-- One queue for Road C  
-
-Each queue:
-
-- Stores vehicles in order of arrival  
-- Has a fixed maximum size  
-- Uses enqueue-only insertion without reordering  
-
-This fulfills the requirement of using linear data structures for vehicle management.
+**Queue Operations:**
+- Enqueue: Add vehicle to lane queue
+- Dequeue: Remove vehicle after crossing
+- Count tracking for statistical analysis
+- Front/rear pointer management
 
 ---
 
 ### 3.4 Traffic Signal System
 
-The traffic signal system operates using three signal states:
+**Signal States:**
+- ALL_RED: All vehicles in Lane 2 must stop
+- A_GREEN: Road A vehicles can proceed
+- B_GREEN: Road B vehicles can proceed  
+- C_GREEN: Road C vehicles can proceed
+- D_GREEN: Road D vehicles can proceed
 
-- **ALL_RED:** All vehicles must stop  
-- **AB_GREEN:** Vehicles on Road A are allowed to move  
-- **CD_GREEN:** Vehicles on Road C are allowed to move  
-
-Signal behavior rules:
-
-- Only one road can have a green signal at a time  
-- All other roads remain red to prevent deadlock  
-- Only vehicles in Lane 2 are affected by signal states  
-
-Signal control is handled using a separate thread.
-
----
-
-### 3.5 Signal Timing Logic
-
-The traffic signal follows a fixed timing cycle:
-
-- Road A green for 5 seconds  
-- All red for 2 seconds  
-- Road C green for 5 seconds  
-- All red for 2 seconds  
-
-This timing mechanism ensures safe and fair vehicle movement through the junction.
+**Signal Control Logic:**
+- Only one road has green signal at a time
+- Left-turn vehicles can proceed when perpendicular road is green
+- Signal timing dynamically adjusted
+- Priority mode for congested lanes
 
 ---
 
-### 3.6 Vehicle Movement Logic
+### 3.5 Dynamic Timing Algorithm
 
-Vehicle behavior in the simulation includes:
+**Green Time Calculation Formula:**
+|V| = (1/n) × Σ|Lᵢ|
 
-- Continuous movement toward the junction  
-- Automatic alignment to lane centers  
-- Stopping before the junction when the signal is red (Lane 2 only)  
-- Left turns permitted from Lane 3 after crossing  
-- Automatic removal after exiting the visible area  
+Where:
+- n = Number of normal lanes (BL2, CL3, DL3 = 3)
+- |Lᵢ| = Vehicle count on i-th lane
+- |V| = Number of vehicles served per cycle
 
----
+**Total Green Time:**
+Total Green Time = |V| × t
+Where t = Time per vehicle (100ms base value)
 
-### 3.7 Vehicle Generation
-
-Vehicles are generated continuously using a dedicated generator thread.
-
-Spawn behavior:
-
-- Road A vehicles spawn above the window  
-- Road C vehicles spawn to the right of the window  
-- Vehicles are generated in all three lanes  
-- Spawn interval is 1.2 seconds  
-
-This provides continuous traffic flow throughout the simulation.
+**Timing Range:**
+- Minimum: 2000 milliseconds
+- Maximum: 5000 milliseconds
+- Dynamic adjustment based on traffic density
 
 ---
 
-## 4. Programming Requirements
+### 3.6 Priority Control System
 
-The simulator is implemented using the **C programming language** with **SDL2** for visualization.
+**Normal Mode:**
+- All roads served equally using dynamic timing
+- Sequential signal rotation: A → B → C → D
+- Based on calculated green times
 
-### 4.1 Multithreading
-
-The system uses multiple threads:
-
-- Signal thread for traffic light control  
-- Generator thread for vehicle creation  
-- Main thread for rendering and vehicle updates  
-
-This design ensures real-time simulation without blocking execution.
-
----
-
-### 4.2 Libraries Used
-
-The following libraries are used:
-
-- Simple DirectMedia Layer (SDL2) for graphics rendering  
-- Windows threading library (CreateThread) for concurrency  
-- Standard C libraries for data handling and timing  
+**Priority Mode:**
+- Activated when AL2 lane has >10 waiting vehicles
+- Road A gets immediate green signal
+- Continues until AL2 count drops below 5
+- Ensures congestion relief on high-traffic lanes
 
 ---
 
-## 5. Key Features
+### 3.7 Vehicle Generation System
 
-- Continuous vehicle spawning  
-- Signal-controlled traffic flow  
-- Lane-based movement logic  
-- Queue-based vehicle management  
-- Deadlock-free signal operation  
-- Real-time graphical visualization  
+**Spawn Mechanism:**
+- Continuous random spawning (20% chance per lane per second)
+- Lane-specific vehicle placement
+- Random turn assignment based on lane rules
+- Initial position calculation based on road and lane
+
+**External Control:**
+- 12 text files (AL1.txt through DL3.txt)
+- File reading every 3 seconds
+- Vehicle count updates from external sources
+- Flexible traffic density control
+
+---
+
+## 4. Visual Features
+
+### 4.1 Color Coding System
+
+- **Red:** AL2 lane in priority mode (>10 vehicles)
+- **Green:** Lane 3 (left-turn only vehicles)
+- **Blue:** Lane 2 (signal-controlled straight vehicles)
+- **Yellow:** Lane 1 vehicles going straight
+- **Orange:** Lane 1 vehicles turning left
+- **Magenta:** Lane 1 vehicles turning right
+
+### 4.2 Visual Indicators
+
+- **Turning Indicators:** White rectangles showing turn intention
+- **Waiting Indicators:** Red dots on stopped vehicles
+- **Traffic Lights:** Four signal lights at junction approaches
+- **Statistics Panel:** Real-time traffic data display
+- **Lane Markings:** Clear road and lane markings
+
+### 4.3 Display Elements
+
+- **Road Network:** Grass background with gray roads
+- **Lane Divisions:** White dashed lane markings
+- **Traffic Signals:** Red/Green lights at each approach
+- **Vehicle Shapes:** Rectangular vehicles with color coding
+- **Info Panel:** Black semi-transparent stats overlay
 
 ---
 
-## 6. Conclusion
+## 5. Technical Implementation
 
-This project demonstrates the effective use of queue-based linear data structures in managing traffic flow at a junction. By combining FIFO queues, traffic signal control, lane-based movement rules, and multithreading, the simulation models realistic traffic behavior.
+### 5.1 Data Structures
 
-The use of SDL2 provides clear visual representation, making the system suitable for academic analysis and demonstration of data structure concepts applied to real-world problems.
+**Vehicle Node Structure:**
+```c
+typedef struct VehicleNode {
+    int id;
+    char road;
+    int lane;
+    float x, y;
+    float speed;
+    float target_x, target_y;
+    float angle;
+    int waiting;
+    int has_turned;
+    TurnDirection turn;
+    struct VehicleNode* next;
+} VehicleNode;
+Lane Queue Structure:
+
+c
+typedef struct {
+    VehicleNode* front;
+    VehicleNode* rear;
+    int count;
+    char name[4];
+    int last_spawn_time;
+} LaneQueue;
+Traffic Signal Structure:
+
+c
+typedef struct {
+    SignalState state;
+    int timer;
+    int green_time;
+    char current_road;
+    int priority_mode;
+} TrafficSignal;
+
+
+## 5.2 Management Threads
+
+###  Signal Control Thread
+- Independent thread for traffic light timing  
+- 100 ms update interval  
+- State transition management  
+- Priority mode detection  
+
+### Main Thread
+- Graphics rendering at **60 FPS**  
+- Vehicle movement updates  
+- File I/O operations  
+- User input handling  
 
 ---
+
+## 5.3 Key Functions
+
+###  Core Functions
+- **addVehicleToLane()** – Adds vehicle to the appropriate queue  
+- **removeVehicleFromLane()** – Removes vehicle after crossing  
+- **shouldStopAtRed()** – Determines whether a vehicle must stop  
+- **calculateTurnPosition()** – Calculates turning trajectory  
+- **updateSignal()** – Updates traffic signal state  
+- **calculateFormula()** – Computes dynamic timing values  
+
+###  Visualization Functions
+- **drawRoads()** – Renders the road network  
+- **drawVehicles()** – Draws all vehicles with proper colors  
+- **drawAllLights()** – Renders traffic signals  
+- **drawStats()** – Displays statistics overlay  
+
+---
+
+## 6. File Structure
+
+```text
+traffic_simulator/
+├── simulator.c              # Main simulation program
+├── traffic_generator.c      # Vehicle generation program
+├── AL1.txt - DL3.txt        # Lane configuration files (12 files)
+├── README.md                # Project documentation
+└── assets/                  # Resource files (if any)
+
+Communication Method:
+
+File-based communication between generator and simulator
+
+Generator writes vehicle counts to lane files
+
+Simulator reads files every 3 seconds
+
+Simple and effective inter-process communication
+
+7. Compilation and Execution
+7.1 Compilation Instructions
+bash
+# On Windows with MinGW
+gcc -o traffic_simulator simulator.c -lSDL2main -lSDL2
+
+# On Linux
+gcc -o traffic_simulator simulator.c -lSDL2 -lm
+7.2 Execution
+bash
+./traffic_simulator
+7.3 Dependencies
+SDL2 library
+
+Windows: SDL2 Development Libraries
+
+Linux: libsdl2-dev package
+
+Standard C libraries
+
+8. Key Features
+✅ Realistic Vehicle Turning: Proper left, right, and straight movements
+✅ Dynamic Signal Timing: Green time adjusts based on traffic density
+✅ Priority Lane System: AL2 gets priority when congested
+✅ Visual Clarity: Color-coded vehicles and clear indicators
+✅ File-Based Control: External traffic parameter adjustment
+✅ Continuous Operation: Runs indefinitely with continuous spawning
+✅ Statistical Display: Real-time traffic metrics
+✅ Smooth Animation: 60 FPS rendering for fluid movement
+
+9. Academic Value
+This project demonstrates:
+
+Practical Data Structure Application: FIFO queues for traffic management
+
+Real-World Problem Solving: Traffic flow optimization
+
+Algorithm Implementation: Dynamic timing and priority algorithms
+
+System Design: Modular architecture with clear separation of concerns
+
+Visualization Techniques: Real-time graphics for simulation
+
+Concurrent Programming: Multithreading for independent subsystems
+
+10. Future Enhancements
+Potential improvements for extended functionality:
+
+Pedestrian Crossings: Add pedestrian signals and crossings
+
+Emergency Vehicles: Priority passage for emergency vehicles
+
+Traffic Analytics: Data logging and performance analysis
+
+Weather Effects: Rain/fog affecting vehicle behavior
+
+Multiple Junctions: Network of interconnected intersections
+
+GUI Controls: Real-time parameter adjustment interface
+
+Sound Effects: Traffic sounds for enhanced realism
+
+Network Mode: Multi-computer distributed simulation
+
+11. Conclusion
+This enhanced traffic simulator successfully implements a comprehensive traffic management system using queue data structures. It demonstrates sophisticated vehicle behavior, intelligent signal control, and realistic visualization of a four-way intersection.
+
+The system provides both academic value in demonstrating data structure applications and practical insights into traffic engineering principles. With its modular design and extensible architecture, it serves as an excellent foundation for further development in traffic simulation and queue management systems.
