@@ -1,6 +1,9 @@
 # Traffic Simulator
 
 ---
+![Demo](giphy.gif)
+
+---
 
 ## Assignment Information
 
