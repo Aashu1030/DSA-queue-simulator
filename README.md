@@ -1,7 +1,7 @@
 # Traffic Simulator
 
 ---
-![Demo](giphy)
+![Demo](giphy.gif)
 
 ---
 
